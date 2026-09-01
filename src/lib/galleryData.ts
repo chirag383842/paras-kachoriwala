@@ -1,0 +1,73 @@
+import type { GalleryImage } from './types';
+
+export const DEFAULT_GALLERY_IMAGES: GalleryImage[] = [
+  {
+    id: 'g1',
+    src: '/images/kachori.webp',
+    alt: 'Fresh Kachori served at Paras Kachoriwala',
+    category: 'food',
+    caption: 'Signature Kachori',
+    display_order: 1,
+    created_at: new Date('2026-08-01T12:00:00Z').toISOString(),
+  },
+  {
+    id: 'g2',
+    src: '/images/bhel.webp',
+    alt: 'Fresh Bhel topped with sev and chutneys',
+    category: 'food',
+    caption: 'Fresh Bhel',
+    display_order: 2,
+    created_at: new Date('2026-08-02T12:00:00Z').toISOString(),
+  },
+  {
+    id: 'g3',
+    src: '/images/lari_pic.webp',
+    alt: 'Paras Kachoriwala food cart at night',
+    category: 'shop',
+    caption: 'Our Food Cart',
+    display_order: 3,
+    created_at: new Date('2026-08-03T12:00:00Z').toISOString(),
+  },
+  {
+    id: 'g4',
+    src: '/images/bhel.webp',
+    alt: 'Close-up of crunchy Bhel ingredients',
+    category: 'food',
+    caption: 'Full of Flavour',
+    display_order: 4,
+    created_at: new Date('2026-08-04T12:00:00Z').toISOString(),
+  },
+  {
+    id: 'g5',
+    src: '/images/kachori.webp',
+    alt: 'Kachori prepared fresh for customers',
+    category: 'food',
+    caption: 'Made Fresh Daily',
+    display_order: 5,
+    created_at: new Date('2026-08-05T12:00:00Z').toISOString(),
+  },
+  {
+    id: 'g6',
+    src: '/images/lari_pic.webp',
+    alt: 'Customers enjoying fresh kachori at Paras Kachoriwala',
+    category: 'customers',
+    caption: 'Customer Moments at Stall',
+    display_order: 6,
+    created_at: new Date('2026-08-06T12:00:00Z').toISOString(),
+  },
+];
+
+export const GALLERY_CATEGORIES: {
+  id: GalleryImage['category'] | 'all';
+  label: string;
+  shortLabel: string;
+  icon: string;
+  description: string;
+}[] = [
+  { id: 'all', label: 'All Photos', shortLabel: 'All', icon: '🖼️', description: 'All gallery photos' },
+  { id: 'food', label: 'Food / Menu Section', shortLabel: 'Food / Menu', icon: '🍽️', description: 'Crispy Kachori, Bhel, chutneys & ingredients' },
+  { id: 'shop', label: 'Shop / Stall Location', shortLabel: 'Shop / Cart', icon: '🛒', description: 'Food cart, night stall, and location setup' },
+  { id: 'customers', label: 'Customers / Community', shortLabel: 'Customers', icon: '👥', description: 'Happy customers, foodies & community moments' },
+  { id: 'home', label: 'Home Page Featured', shortLabel: 'Home Page', icon: '🏠', description: 'Featured preview photos shown on the homepage' },
+  { id: 'about', label: 'About / Story Section', shortLabel: 'About / Story', icon: '📖', description: 'Heritage and story of Paras Kachoriwala' },
+];
