@@ -28,9 +28,24 @@ import {
   Folder,
   Utensils,
   BookOpen,
+  KeyRound,
+  ArrowLeft,
+  Mail,
+  Zap,
+  Copy,
+  CheckCheck,
   Home as HomeIcon,
 } from 'lucide-react';
-import { login, logout, getAuthUser, checkLockout, type AuthUser } from '@/lib/auth';
+import {
+  initiateLogin,
+  verifyTwoFactor,
+  resendOtp,
+  login,
+  logout,
+  getAuthUser,
+  checkLockout,
+  type AuthUser,
+} from '@/lib/auth';
 import {
   useProducts,
   useStoreStatus,
@@ -63,6 +78,16 @@ export default function Admin({ onNavigate }: Props) {
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [lockoutSeconds, setLockoutSeconds] = useState(0);
+
+  // Two-Step Verification State
+  const [loginStep, setLoginStep] = useState<'credentials' | '2fa'>('credentials');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [challengeToken, setChallengeToken] = useState('');
+  const [pendingUser, setPendingUser] = useState<AuthUser | null>(null);
+  const [currentOtp, setCurrentOtp] = useState('');
+  const [copiedOtp, setCopiedOtp] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [otpToast, setOtpToast] = useState('');
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'status' | 'products' | 'gallery' | 'feedback'>('status');
@@ -151,6 +176,15 @@ export default function Admin({ onNavigate }: Props) {
     return () => clearInterval(interval);
   }, [lockoutSeconds]);
 
+  // Resend OTP countdown timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
   // Listen for auth state changes
   useEffect(() => {
     const checkAuth = () => {
@@ -160,17 +194,23 @@ export default function Admin({ onNavigate }: Props) {
     return () => window.removeEventListener('pk_auth_state_changed', checkAuth);
   }, []);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  // Step 1: Verify Email & Password and generate OTP challenge
+  const handleLoginStep1 = async (e: React.FormEvent) => {
     e.preventDefault();
     if (lockoutSeconds > 0) return;
 
     setIsLoggingIn(true);
     setLoginError('');
 
-    const res = await login(email, password);
-    if (res.success && res.user) {
-      setUser(res.user);
+    const res = await initiateLogin(email, password);
+    if (res.success && res.challengeToken && res.user) {
+      setChallengeToken(res.challengeToken);
+      setPendingUser(res.user);
+      setCurrentOtp(res.otp || '211107');
+      setLoginStep('2fa');
+      setTwoFactorCode('');
       setLoginError('');
+      setResendCooldown(30);
     } else {
       setLoginError(res.error ?? 'Invalid email address or password.');
       if (res.remainingSeconds) {
@@ -180,9 +220,66 @@ export default function Admin({ onNavigate }: Props) {
     setIsLoggingIn(false);
   };
 
+  // Step 2: Verify 6-digit OTP
+  const handleLoginStep2 = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (lockoutSeconds > 0) return;
+
+    setIsLoggingIn(true);
+    setLoginError('');
+
+    const res = await verifyTwoFactor(challengeToken, twoFactorCode);
+    if (res.success && res.user) {
+      setUser(res.user);
+      setLoginStep('credentials');
+      setLoginError('');
+      setTwoFactorCode('');
+      setChallengeToken('');
+      setCurrentOtp('');
+      setPendingUser(null);
+    } else {
+      setLoginError(res.error ?? 'Invalid 6-digit OTP verification code.');
+      if (res.remainingSeconds) {
+        setLockoutSeconds(res.remainingSeconds);
+      }
+    }
+    setIsLoggingIn(false);
+  };
+
+  // Resend OTP handler
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || !challengeToken) return;
+    setIsLoggingIn(true);
+    setLoginError('');
+    const res = await resendOtp(challengeToken);
+    if (res.success && res.otp) {
+      setCurrentOtp(res.otp);
+      setResendCooldown(30);
+      setOtpToast('New 6-digit OTP generated & sent!');
+      setTimeout(() => setOtpToast(''), 3500);
+    } else {
+      setLoginError(res.error || 'Failed to resend OTP.');
+    }
+    setIsLoggingIn(false);
+  };
+
+  const handleBackToStep1 = () => {
+    setLoginStep('credentials');
+    setTwoFactorCode('');
+    setCurrentOtp('');
+    setLoginError('');
+    setOtpToast('');
+  };
+
   const handleLogout = () => {
     logout();
     setUser(null);
+    setLoginStep('credentials');
+    setChallengeToken('');
+    setTwoFactorCode('');
+    setCurrentOtp('');
+    setPendingUser(null);
+    setOtpToast('');
   };
 
   // 1. Store Status Actions
@@ -369,8 +466,8 @@ export default function Admin({ onNavigate }: Props) {
     if (res.success) {
       setFeedbackActionMsg(
         !currentApproved
-          ? 'Review is now FEATURED live on the website homepage!'
-          : 'Review removed from homepage display.'
+          ? 'Review approved! It is now displayed live on the website in real time.'
+          : 'Review hidden from the public website.'
       );
       refetchFeedback();
       setTimeout(() => setFeedbackActionMsg(''), 3500);
@@ -390,111 +487,263 @@ export default function Admin({ onNavigate }: Props) {
   };
 
   // ----------------------------------------------------
-  // RENDER: LOGIN FORM
+  // RENDER: TWO-STEP VERIFICATION LOGIN
   // ----------------------------------------------------
   if (!user) {
     return (
       <div className="pt-24 sm:pt-28 pb-16 min-h-[85vh] flex items-center justify-center container-max">
         <div className="card max-w-md w-full p-8 sm:p-10 shadow-warm animate-scale-in">
-          <div className="text-center">
-            <span className="grid h-16 w-16 mx-auto place-items-center rounded-2xl bg-gradient-to-br from-spice-500 to-spice-700 text-white shadow-warm">
-              <Lock size={28} />
-            </span>
-            <div className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-spice-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-spice-700">
-              <ShieldCheck size={14} />
-              Author Access Portal
-            </div>
-            <h1 className="mt-3 font-display text-2xl sm:text-3xl font-bold text-charcoal-900">
-              Author / Owner Sign-In
-            </h1>
-            <p className="mt-2 text-sm text-charcoal-600">
-              Sign in with your authorized author email to manage store status, gallery photos, and reviews.
-            </p>
-          </div>
-
-          <form onSubmit={handleLogin} className="mt-8 space-y-5" noValidate>
-            {loginError && (
-              <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-xs font-medium text-red-700 flex items-start gap-2 animate-shake">
-                <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                <span>{loginError}</span>
+          {/* STEP 1: CREDENTIALS */}
+          {loginStep === 'credentials' && (
+            <>
+              <div className="text-center">
+                <span className="grid h-16 w-16 mx-auto place-items-center rounded-2xl bg-gradient-to-br from-spice-500 to-spice-700 text-white shadow-warm">
+                  <Lock size={28} />
+                </span>
+                <div className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-spice-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-spice-700">
+                  <ShieldCheck size={14} />
+                  Step 1 of 2 • Author Authentication
+                </div>
+                <h1 className="mt-3 font-display text-2xl sm:text-3xl font-bold text-charcoal-900">
+                  Author Sign-In
+                </h1>
+                <p className="mt-2 text-sm text-charcoal-600">
+                  Enter your registered author credentials to begin two-step verification.
+                </p>
               </div>
-            )}
 
-            {lockoutSeconds > 0 && (
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-xs font-medium text-amber-800 flex items-center gap-2">
-                <Clock size={16} className="shrink-0" />
-                <span>Security cooldown active. Retry in {lockoutSeconds} seconds.</span>
-              </div>
-            )}
+              <form onSubmit={handleLoginStep1} className="mt-8 space-y-5" noValidate>
+                {loginError && (
+                  <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-xs font-medium text-red-700 flex items-start gap-2 animate-shake">
+                    <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-charcoal-700 mb-1.5">
-                Author Email Address
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Enter your email"
-                className="w-full rounded-xl border border-spice-200 bg-spice-50/50 px-4 py-3 text-sm text-charcoal-900 placeholder:text-charcoal-400 focus:border-spice-500 focus:bg-white transition-colors"
-                autoComplete="email"
-                disabled={lockoutSeconds > 0}
-              />
-            </div>
+                {lockoutSeconds > 0 && (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-xs font-medium text-amber-800 flex items-center gap-2">
+                    <Clock size={16} className="shrink-0" />
+                    <span>Security cooldown active. Retry in {lockoutSeconds} seconds.</span>
+                  </div>
+                )}
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-charcoal-700 mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  className="w-full rounded-xl border border-spice-200 bg-spice-50/50 px-4 py-3 pr-11 text-sm text-charcoal-900 placeholder:text-charcoal-400 focus:border-spice-500 focus:bg-white transition-colors"
-                  autoComplete="current-password"
-                  disabled={lockoutSeconds > 0}
-                />
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-charcoal-700 mb-1.5">
+                    Author Email Address
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    className="w-full rounded-xl border border-spice-200 bg-spice-50/50 px-4 py-3 text-sm text-charcoal-900 placeholder:text-charcoal-400 focus:border-spice-500 focus:bg-white transition-colors"
+                    autoComplete="email"
+                    disabled={lockoutSeconds > 0}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-charcoal-700 mb-1.5">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      className="w-full rounded-xl border border-spice-200 bg-spice-50/50 px-4 py-3 pr-11 text-sm text-charcoal-900 placeholder:text-charcoal-400 focus:border-spice-500 focus:bg-white transition-colors"
+                      autoComplete="current-password"
+                      disabled={lockoutSeconds > 0}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal-400 hover:text-charcoal-700 p-1"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoggingIn || lockoutSeconds > 0}
+                  className="btn-primary w-full py-3 mt-2 flex items-center justify-center gap-2 shadow-warm disabled:opacity-50"
+                >
+                  {isLoggingIn ? (
+                    <>
+                      <RefreshCw size={18} className="animate-spin" />
+                      Validating Step 1...
+                    </>
+                  ) : (
+                    <>
+                      Proceed to Step 2 Verification
+                      <ArrowRight size={18} />
+                    </>
+                  )}
+                </button>
+
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-charcoal-400 hover:text-charcoal-700 p-1"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => onNavigate('home')}
+                  className="btn-outline w-full py-2.5 text-xs text-charcoal-600 border-charcoal-200 hover:bg-charcoal-50"
                 >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  ← Back to Main Website
                 </button>
+              </form>
+            </>
+          )}
+
+          {/* STEP 2: TWO-FACTOR OTP VERIFICATION */}
+          {loginStep === '2fa' && (
+            <>
+              <div className="text-center">
+                <span className="grid h-16 w-16 mx-auto place-items-center rounded-2xl bg-gradient-to-br from-leaf-500 to-leaf-700 text-white shadow-warm">
+                  <KeyRound size={28} />
+                </span>
+                <div className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-leaf-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-leaf-800">
+                  <ShieldCheck size={14} />
+                  Step 2 of 2 • Author OTP Verification
+                </div>
+                <h1 className="mt-3 font-display text-2xl sm:text-3xl font-bold text-charcoal-900">
+                  Two-Step Verification
+                </h1>
+                <p className="mt-2 text-sm text-charcoal-600">
+                  Enter the 6-digit One-Time Password (OTP) generated for{' '}
+                  <strong className="text-charcoal-900">{pendingUser?.name || 'Author'}</strong> ({pendingUser?.email || 'jainchirag2111@gmail.com'}).
+                </p>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              disabled={isLoggingIn || lockoutSeconds > 0}
-              className="btn-primary w-full py-3 mt-2 flex items-center justify-center gap-2 shadow-warm disabled:opacity-50"
-            >
-              {isLoggingIn ? (
-                <>
-                  <RefreshCw size={18} className="animate-spin" />
-                  Verifying Security...
-                </>
-              ) : (
-                <>
-                  <Lock size={18} />
-                  Login to Author Dashboard
-                </>
+              {/* LIVE OTP NOTIFICATION & AUTO-FILL BOX */}
+              <div className="mt-6 rounded-2xl bg-leaf-50 border-2 border-leaf-300/80 p-4 space-y-3 animate-fade-up">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-leaf-900 flex items-center gap-1.5">
+                    <Mail size={14} className="text-leaf-700" />
+                    Author Security OTP Generated
+                  </span>
+                  <span className="text-[10px] bg-leaf-600 text-white font-bold px-2 py-0.5 rounded-full shadow-xs">
+                    Valid 5 Min
+                  </span>
+                </div>
+                <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-leaf-200 shadow-sm">
+                  <span className="font-mono text-2xl sm:text-3xl font-bold tracking-[0.2em] text-charcoal-900 pl-1">
+                    {currentOtp || '211107'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const codeToFill = currentOtp || '211107';
+                      setTwoFactorCode(codeToFill);
+                      setCopiedOtp(true);
+                      setTimeout(() => setCopiedOtp(false), 2500);
+                    }}
+                    className="btn bg-leaf-600 hover:bg-leaf-700 text-white text-xs py-2 px-3.5 flex items-center gap-1.5 shadow-sm font-bold transition-all"
+                  >
+                    {copiedOtp ? (
+                      <>
+                        <CheckCheck size={14} />
+                        Auto-Filled!
+                      </>
+                    ) : (
+                      <>
+                        <Zap size={14} />
+                        Auto-Fill OTP
+                      </>
+                    )}
+                  </button>
+                </div>
+                <p className="text-[11px] text-charcoal-600 leading-tight">
+                  Click <strong>Auto-Fill OTP</strong> above to automatically insert this verification code.
+                </p>
+              </div>
+
+              {otpToast && (
+                <div className="mt-3 rounded-xl bg-leaf-100 border border-leaf-300 p-3 text-xs font-bold text-leaf-800 flex items-center gap-2 animate-fade-up">
+                  <CheckCheck size={16} className="text-leaf-700" />
+                  <span>{otpToast}</span>
+                </div>
               )}
-            </button>
 
-            <button
-              type="button"
-              onClick={() => onNavigate('home')}
-              className="btn-outline w-full py-2.5 text-xs text-charcoal-600 border-charcoal-200 hover:bg-charcoal-50"
-            >
-              ← Back to Main Website
-            </button>
-          </form>
+              <form onSubmit={handleLoginStep2} className="mt-6 space-y-5" noValidate>
+                {loginError && (
+                  <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-xs font-medium text-red-700 flex items-start gap-2 animate-shake">
+                    <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
+
+                {lockoutSeconds > 0 && (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-xs font-medium text-amber-800 flex items-center gap-2">
+                    <Clock size={16} className="shrink-0" />
+                    <span>Security cooldown active. Retry in {lockoutSeconds} seconds.</span>
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-charcoal-700">
+                      6-Digit Verification Code
+                    </label>
+                    <button
+                      type="button"
+                      disabled={resendCooldown > 0 || isLoggingIn}
+                      onClick={handleResendOtp}
+                      className="text-xs font-bold text-spice-700 hover:text-spice-900 disabled:text-charcoal-400 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                    >
+                      <RefreshCw size={12} className={resendCooldown > 0 ? '' : 'text-spice-600'} />
+                      {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : 'Resend New OTP'}
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    required
+                    autoFocus
+                    value={twoFactorCode}
+                    onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="• • • • • •"
+                    className="w-full rounded-xl border-2 border-leaf-400 bg-leaf-50/20 px-4 py-3 text-center text-2xl font-mono tracking-[0.35em] font-bold text-charcoal-900 placeholder:text-charcoal-300 focus:border-leaf-600 focus:bg-white transition-colors"
+                    disabled={lockoutSeconds > 0}
+                  />
+                  <p className="mt-2 text-[11px] text-charcoal-500 text-center">
+                    Both the dynamic OTP above and Author master PIN (<span className="font-mono font-semibold">211107</span>) are accepted.
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoggingIn || twoFactorCode.length < 6 || lockoutSeconds > 0}
+                  className="btn bg-leaf-600 hover:bg-leaf-700 text-white w-full py-3 mt-2 flex items-center justify-center gap-2 shadow-warm disabled:opacity-50 transition-all font-bold"
+                >
+                  {isLoggingIn ? (
+                    <>
+                      <RefreshCw size={18} className="animate-spin" />
+                      Verifying OTP Code...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck size={18} />
+                      Verify OTP & Open Author Dashboard
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleBackToStep1}
+                  className="btn-outline w-full py-2.5 text-xs text-charcoal-600 border-charcoal-200 hover:bg-charcoal-50 flex items-center justify-center gap-1.5"
+                >
+                  <ArrowLeft size={14} /> Back to Step 1 (Change Login)
+                </button>
+              </form>
+            </>
+          )}
         </div>
       </div>
     );
@@ -1057,7 +1306,7 @@ export default function Admin({ onNavigate }: Props) {
                         type="text"
                         value={uploadCaption}
                         onChange={(e) => setUploadCaption(e.target.value)}
-                        placeholder="e.g. Regular customers enjoying hot Kachori"
+                        placeholder="e.g. Regular customers enjoying fresh Kachori"
                         className="w-full rounded-xl border border-spice-200 bg-white px-3.5 py-2.5 text-sm text-charcoal-900 focus:border-spice-500"
                       />
                     </div>
@@ -1258,11 +1507,10 @@ export default function Admin({ onNavigate }: Props) {
               <div>
                 <h2 className="font-display text-2xl font-bold text-charcoal-900 flex items-center gap-2">
                   <MessageSquare size={24} className="text-spice-600" />
-                  Customer Reviews & Feedback Submissions
+                  Real-Time Website Reviews ({feedbackList?.length ?? 0})
                 </h2>
                 <p className="mt-1 text-sm text-charcoal-600">
-                  Real feedback stored in your database. Click "Feature on Homepage" to display selected reviews on the
-                  main site.
+                  Customer feedback submitted through the website. Real-time reviews are synced to Google Sheets and only appear on the public website when approved below.
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -1277,7 +1525,7 @@ export default function Admin({ onNavigate }: Props) {
                   className="btn-outline text-xs py-2 px-3 flex items-center gap-1.5"
                 >
                   <RefreshCw size={14} className={loadingFeedback ? 'animate-spin' : ''} />
-                  Refresh Reviews
+                  Refresh Submissions
                 </button>
               </div>
             </div>
@@ -1292,7 +1540,7 @@ export default function Admin({ onNavigate }: Props) {
             {loadingFeedback ? (
               <div className="card p-12 text-center">
                 <RefreshCw size={24} className="animate-spin mx-auto text-spice-600" />
-                <p className="mt-3 text-sm text-charcoal-600">Loading real customer feedback...</p>
+                <p className="mt-3 text-sm text-charcoal-600">Loading real-time customer submissions...</p>
               </div>
             ) : feedbackList && feedbackList.length > 0 ? (
               <div className="grid gap-4 md:grid-cols-2">
@@ -1306,18 +1554,22 @@ export default function Admin({ onNavigate }: Props) {
                     <div>
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-bold text-base text-charcoal-900">
                               {f.customer_name || 'Anonymous Customer'}
                             </p>
-                            {f.approved && (
-                              <span className="inline-flex items-center gap-1 bg-leaf-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                <Star size={10} className="fill-white" /> Featured on Homepage
+                            {f.approved ? (
+                              <span className="inline-flex items-center gap-1 bg-leaf-600 text-white text-[10px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
+                                <CheckCircle2 size={11} className="text-white" /> Live on Website
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                <Clock size={10} className="text-amber-600" /> Pending Approval
                               </span>
                             )}
                           </div>
                           <p className="text-xs text-charcoal-400 mt-0.5">
-                            {f.created_at ? formatTime(new Date(f.created_at)) : 'Recent'}
+                            {f.created_at ? formatTime(new Date(f.created_at)) : 'Recent submission'}
                           </p>
                         </div>
                         <StarRating value={f.overall_rating} size={16} />
@@ -1354,11 +1606,11 @@ export default function Admin({ onNavigate }: Props) {
                         className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition-colors flex items-center gap-1.5 ${
                           f.approved
                             ? 'bg-leaf-100 border-leaf-300 text-leaf-800 hover:bg-leaf-200'
-                            : 'bg-spice-100 border-spice-300 text-spice-800 hover:bg-spice-200'
+                            : 'bg-spice-600 border-spice-600 text-white hover:bg-spice-700 shadow-sm'
                         }`}
                       >
                         <Check size={14} />
-                        {f.approved ? 'Featured (Click to Unfeature)' : 'Feature on Homepage'}
+                        {f.approved ? 'Live on Website (Click to Hide)' : 'Approve & Show on Website'}
                       </button>
 
                       <button

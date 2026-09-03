@@ -42,7 +42,7 @@ export default function Menu() {
                   💵 Cash Payment Only • 🎫 Token System at Counter
                 </p>
                 <p className="text-xs text-charcoal-600 mt-0.5">
-                  <strong>No online / UPI payments accepted.</strong> Please pay cash and collect your token at the counter for fresh, hot serving. In-store visit only (No online delivery).
+                  <strong>No online / UPI payments accepted.</strong> Please pay cash and collect your token at the counter for fresh serving. In-store visit only (No online delivery).
                 </p>
               </div>
             </div>
@@ -174,7 +174,7 @@ export default function Menu() {
             Cash Payment Only • Token System at Counter
           </p>
           <p className="text-xs text-charcoal-600 leading-relaxed">
-            We do not accept online payments or online delivery orders. Please visit our stall in person to enjoy fresh, hot food.
+            We do not accept online payments or online delivery orders. Please visit our stall in person to enjoy fresh food.
           </p>
         </div>
       </section>

@@ -27,7 +27,7 @@ export default function Directions() {
             Find Paras Kachoriwala
           </h1>
           <p className="mt-4 text-lg text-charcoal-600 text-balance">
-            Visit us in person for fresh Kachori (Regular, Jain & Swaminarayan) and signature Bhel served hot from 7:00 PM to 11:30 PM daily.
+            Visit us in person for fresh Kachori (Regular, Jain & Swaminarayan) and signature Bhel served fresh from 7:00 PM to 11:30 PM daily.
           </p>
           <div className="mt-6 flex justify-center">
             <StatusBadge open={open} size="md" />

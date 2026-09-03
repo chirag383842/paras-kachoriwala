@@ -45,81 +45,137 @@ export default function Logo({ size = 'md', variant = 'full', className = '', on
       } ${className}`}
       aria-label={`${BRAND.name} — Home`}
     >
-      {/* Brand Icon Badge */}
+      {/* Authentic Brand Kachori Emblem */}
       <div
-        className={`grid place-items-center rounded-2xl bg-gradient-to-br from-spice-500 via-spice-600 to-spice-700 text-white shadow-warm transition-transform duration-300 group-hover:scale-105 ${iconDimensions[size]}`}
+        className={`grid place-items-center rounded-2xl bg-gradient-to-br from-spice-500 via-spice-600 to-spice-800 text-white shadow-warm transition-transform duration-300 group-hover:scale-105 border border-spice-400/40 relative overflow-hidden ${iconDimensions[size]}`}
       >
+        {/* Subtle background radial sheen */}
+        <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/15 to-transparent pointer-events-none" />
+
         <svg
-          viewBox="0 0 40 40"
+          viewBox="0 0 48 48"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
-          className="h-6 w-6 sm:h-7 sm:w-7"
+          className="h-7 w-7 sm:h-8 sm:w-8 relative z-10 drop-shadow-sm"
           aria-hidden="true"
         >
-          {/* Subtle Glow Circle */}
-          <circle cx="20" cy="20" r="18" fill="url(#pk_gold_grad)" opacity="0.18" />
+          {/* Subtle Outer Halo */}
+          <circle cx="24" cy="24" r="21" fill="url(#pk_halo_grad)" opacity="0.25" />
 
-          {/* Crispy Kachori Base Outline */}
+          {/* Golden Kachori Shadow & Outer Crust Base */}
           <ellipse
-            cx="20"
-            cy="24"
-            rx="12"
-            ry="9"
-            fill="url(#pk_kachori_body)"
-            stroke="#fcd34d"
-            strokeWidth="1.5"
+            cx="24"
+            cy="28"
+            rx="15"
+            ry="11"
+            fill="url(#pk_crust_base)"
+            stroke="#f59e0b"
+            strokeWidth="1.2"
           />
 
-          {/* Kachori Flaky Pleats / Crust Texture */}
+          {/* Crispy Golden Puffed Dome Top */}
+          <ellipse
+            cx="24"
+            cy="27"
+            rx="13.5"
+            ry="9.5"
+            fill="url(#pk_golden_puff)"
+          />
+
+          {/* Signature Kachori Fluted Pleats / Khasta Gathering Knot */}
+          {/* Central top pleat / pinch */}
           <path
-            d="M11 23C13.5 26.5 17 28 20 28C23 28 26.5 26.5 29 23"
+            d="M24 20.5 C22 23, 20 25.5, 17 27.5"
             stroke="#b45309"
             strokeWidth="1.2"
             strokeLinecap="round"
-            opacity="0.8"
+            opacity="0.85"
           />
           <path
-            d="M14 20.5C16 23 18.5 24 20 24C21.5 24 24 23 26 20.5"
-            stroke="#fef3c7"
+            d="M24 20.5 C26 23, 28 25.5, 31 27.5"
+            stroke="#b45309"
             strokeWidth="1.2"
+            strokeLinecap="round"
+            opacity="0.85"
+          />
+          <path
+            d="M24 20.5 C24 24, 24 27, 24 29"
+            stroke="#d97706"
+            strokeWidth="1.4"
             strokeLinecap="round"
             opacity="0.9"
           />
 
-          {/* Steaming Aroma / Flavor Swirls */}
+          {/* Kachori Top Pinch Knot */}
+          <ellipse
+            cx="24"
+            cy="21.5"
+            rx="3"
+            ry="2"
+            fill="#fef08a"
+            stroke="#b45309"
+            strokeWidth="0.9"
+          />
+
+          {/* Crispy Golden Surface Flakes Highlight */}
           <path
-            d="M16 14C15 11.5 17 9.5 16 7"
-            stroke="#fcd34d"
-            strokeWidth="1.5"
+            d="M16 26.5 C19 28.5, 23 29, 27 28.2"
+            stroke="#fef9c3"
+            strokeWidth="1.1"
             strokeLinecap="round"
-            className="animate-pulse"
+            opacity="0.85"
+          />
+
+          {/* Traditional Roasted Spice Grain Accents (Ajwain/Jeera) */}
+          <circle cx="21" cy="25" r="0.8" fill="#78350f" />
+          <circle cx="27" cy="25.5" r="0.75" fill="#78350f" />
+          <circle cx="24" cy="27" r="0.8" fill="#78350f" />
+
+          {/* Fresh Coriander Leaf Garnishing Accent */}
+          <path
+            d="M28.5 20.5 C29.5 19 32 19.5 32.5 21.5 C31 22.5 29.5 21.5 28.5 20.5 Z"
+            fill="#10b981"
+            opacity="0.95"
+          />
+
+          {/* Fragrant Warm Steam / Aroma Waves Rising */}
+          <path
+            d="M19 16 C18 13.5 20 11.5 19 9"
+            stroke="#fde68a"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            opacity="0.9"
           />
           <path
-            d="M20 13C19 10 21 8.5 20 5.5"
-            stroke="#fef3c7"
+            d="M24 15 C23 12 25 10.5 24 7"
+            stroke="#fef08a"
             strokeWidth="1.6"
             strokeLinecap="round"
           />
           <path
-            d="M24 14C23 11.5 25 9.5 24 7"
-            stroke="#fcd34d"
-            strokeWidth="1.5"
+            d="M29 16 C28 13.5 30 11.5 29 9"
+            stroke="#fde68a"
+            strokeWidth="1.4"
             strokeLinecap="round"
-            className="animate-pulse"
+            opacity="0.9"
           />
 
-          {/* Center Spice Seed Accent */}
-          <circle cx="20" cy="21.5" r="1.2" fill="#78350f" />
-
           <defs>
-            <linearGradient id="pk_gold_grad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+            <radialGradient id="pk_halo_grad" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#fef08a" />
+              <stop offset="70%" stopColor="#f59e0b" />
+              <stop offset="100%" stopColor="#d97706" stopOpacity="0" />
+            </radialGradient>
+            <linearGradient id="pk_crust_base" x1="10" y1="18" x2="38" y2="38" gradientUnits="userSpaceOnUse">
               <stop stopColor="#f59e0b" />
-              <stop offset="1" stopColor="#d97706" />
+              <stop offset="0.6" stopColor="#d97706" />
+              <stop offset="1" stopColor="#92400e" />
             </linearGradient>
-            <linearGradient id="pk_kachori_body" x1="8" y1="15" x2="32" y2="33" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#fde68a" />
-              <stop offset="0.5" stopColor="#f59e0b" />
-              <stop offset="1" stopColor="#d97706" />
+            <linearGradient id="pk_golden_puff" x1="14" y1="18" x2="34" y2="35" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#fef08a" />
+              <stop offset="0.45" stopColor="#fbbf24" />
+              <stop offset="0.8" stopColor="#f59e0b" />
+              <stop offset="1" stopColor="#c2410c" />
             </linearGradient>
           </defs>
         </svg>

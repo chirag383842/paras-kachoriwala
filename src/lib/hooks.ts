@@ -295,15 +295,65 @@ export function useGallery() {
   return { ...state, refetch: fetchGallery };
 }
 
+// 6 Fixed Justdial Reviews (Permanently displayed on public website; not managed in Author Panel)
+export const FIXED_JUSTDIAL_REVIEWS: Review[] = [
+  {
+    id: 'jd_1',
+    rating: 5,
+    message: 'Best kachori in the area! Crispy, fresh and full of authentic flavour. Have been coming here for years.',
+    customer_name: 'Rahul Sharma',
+    display_order: 1,
+  },
+  {
+    id: 'jd_2',
+    rating: 5,
+    message: 'The Jain kachori (no onion, no garlic) is unmatched in taste. Pure authentic flavours and delicious chutneys.',
+    customer_name: 'Bhavin Shah',
+    display_order: 2,
+  },
+  {
+    id: 'jd_3',
+    rating: 5,
+    message: 'The bhel here is unbeatable. Perfect balance of sweet, spicy and crunchy sev in every bite.',
+    customer_name: 'Sneha Patel',
+    display_order: 3,
+  },
+  {
+    id: 'jd_4',
+    rating: 5,
+    message: 'Famous for a reason. Generously sized kachoris made fresh every evening. Fast token service.',
+    customer_name: 'Amit V.',
+    display_order: 4,
+  },
+  {
+    id: 'jd_5',
+    rating: 5,
+    message: 'Swaminarayan Satvik kachori is delicious and prepared with great purity. A trusted favourite for our family.',
+    customer_name: 'Jigar Mehta',
+    display_order: 5,
+  },
+  {
+    id: 'jd_6',
+    rating: 5,
+    message: 'A must-visit street food spot. Top quality, crispy kachoris and signature bhel served fresh every night.',
+    customer_name: 'Priya D.',
+    display_order: 6,
+  },
+];
+
 // ----------------------------------------------------
-// 4. REVIEWS HOOK (REAL DATABASE APPROVED FEEDBACK)
+// 4. REVIEWS HOOK (REAL DATABASE APPROVED FEEDBACK + PERMANENT JUSTDIAL REVIEWS)
 // ----------------------------------------------------
 export function useReviews() {
-  const [state, setState] = useState<AsyncState<Review[]>>({ data: null, loading: true, error: null });
+  const [state, setState] = useState<AsyncState<Review[]>>({
+    data: FIXED_JUSTDIAL_REVIEWS,
+    loading: false,
+    error: null,
+  });
 
   const fetchReviews = useCallback(async () => {
     try {
-      // Fetch approved feedback as live customer reviews
+      // Fetch only author-approved feedback submitted via website
       const { data: feedbackData, error: feedbackError } = await supabase
         .from('feedback')
         .select('*')
@@ -311,7 +361,7 @@ export function useReviews() {
         .order('created_at', { ascending: false });
 
       if (!feedbackError && feedbackData && feedbackData.length > 0) {
-        const reviews: Review[] = feedbackData.map((f, i) => ({
+        const approvedRealtimeReviews: Review[] = feedbackData.map((f, i) => ({
           id: f.id,
           rating: f.overall_rating,
           message: f.message || 'Great food and fast service!',
@@ -319,23 +369,18 @@ export function useReviews() {
           display_order: i + 1,
           created_at: f.created_at,
         }));
-        setState({ data: reviews, loading: false, error: null });
+        // Show real-time approved reviews followed by the 6 fixed Justdial reviews
+        setState({
+          data: [...approvedRealtimeReviews, ...FIXED_JUSTDIAL_REVIEWS],
+          loading: false,
+          error: null,
+        });
         return;
       }
 
-      // Fallback to reviews table if present
-      const { data: rawReviews, error: reviewsError } = await supabase
-        .from('reviews')
-        .select('*')
-        .order('display_order', { ascending: true });
-
-      if (!reviewsError && rawReviews && rawReviews.length > 0) {
-        setState({ data: rawReviews as Review[], loading: false, error: null });
-      } else {
-        setState({ data: [], loading: false, error: null });
-      }
+      setState({ data: FIXED_JUSTDIAL_REVIEWS, loading: false, error: null });
     } catch {
-      setState({ data: [], loading: false, error: null });
+      setState({ data: FIXED_JUSTDIAL_REVIEWS, loading: false, error: null });
     }
   }, []);
 
