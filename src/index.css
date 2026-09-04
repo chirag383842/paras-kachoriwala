@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-spice-50 text-charcoal-900 font-sans antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3, h4 {
+    @apply font-display;
+  }
+  ::selection {
+    @apply bg-spice-200 text-charcoal-900;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-spice-500 ring-offset-2 ring-offset-spice-50;
+  }
+}
+
+@layer components {
+  .container-px {
+    @apply px-5 sm:px-8 lg:px-12;
+  }
+  .container-max {
+    @apply mx-auto max-w-7xl container-px;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-7 py-3.5 text-sm font-semibold tracking-wide transition-all duration-300 focus-visible:ring-2 focus-visible:ring-spice-500 focus-visible:ring-offset-2;
+  }
+  .btn-primary {
+    @apply btn bg-spice-600 text-white shadow-warm hover:bg-spice-700 hover:shadow-glow active:scale-[0.98];
+  }
+  .btn-outline {
+    @apply btn border-2 border-spice-600 text-spice-700 bg-white/60 backdrop-blur hover:bg-spice-600 hover:text-white active:scale-[0.98];
+  }
+  .btn-ghost {
+    @apply btn text-charcoal-700 hover:bg-spice-100 active:scale-[0.98];
+  }
+  .card {
+    @apply rounded-3xl bg-white shadow-card border border-spice-100/60 overflow-hidden;
+  }
+  .eyebrow {
+    @apply inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.22em] text-spice-600;
+  }
+  .skeleton {
+    @apply relative overflow-hidden bg-spice-100;
+  }
+  .skeleton::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 1.8s linear infinite;
+  }
+  .section-pad {
+    @apply py-16 sm:py-20 lg:py-28;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .tap-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
