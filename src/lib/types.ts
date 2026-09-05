@@ -39,6 +39,7 @@ export type Review = {
   customer_name: string;
   display_order?: number;
   created_at?: string;
+  source?: 'justdial' | 'verified';
 };
 
 export type GalleryCategory = 'all' | 'food' | 'shop' | 'customers' | 'about' | 'home';

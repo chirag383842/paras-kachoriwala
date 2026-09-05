@@ -43,7 +43,7 @@ import {
   updateGalleryImage,
   deleteGalleryImage,
 } from '@/lib/hooks';
-import { getGoogleSheetUrl, setGoogleSheetUrl } from '@/lib/googleSheets';
+import { getGoogleSheetUrl, setGoogleSheetUrl, testGoogleSheetWebhook } from '@/lib/googleSheets';
 import { CROWD_META, type CrowdLevel, formatTime, getISTDate } from '@/lib/constants';
 import { GALLERY_CATEGORIES } from '@/lib/galleryData';
 import type { Page } from '@/components/Navbar';
@@ -99,6 +99,8 @@ export default function Admin({ onNavigate }: Props) {
   // Google Sheets state
   const [sheetUrl, setSheetUrl] = useState(getGoogleSheetUrl());
   const [sheetUrlSaved, setSheetUrlSaved] = useState(false);
+  const [testingWebhook, setTestingWebhook] = useState(false);
+  const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Feedback & Reviews state
   const { data: feedbackList, loading: loadingFeedback, error: feedbackError, refetch: refetchFeedback } = useFeedbackList();
@@ -405,6 +407,14 @@ export default function Admin({ onNavigate }: Props) {
     setGoogleSheetUrl(sheetUrl);
     setSheetUrlSaved(true);
     setTimeout(() => setSheetUrlSaved(false), 3500);
+  };
+
+  const handleTestWebhook = async () => {
+    setTestingWebhook(true);
+    setWebhookTestResult(null);
+    const result = await testGoogleSheetWebhook(sheetUrl);
+    setWebhookTestResult(result);
+    setTestingWebhook(false);
   };
 
   // ----------------------------------------------------
@@ -1327,10 +1337,19 @@ export default function Admin({ onNavigate }: Props) {
                 />
                 <button
                   onClick={handleSaveSheetUrl}
-                  className="btn bg-leaf-600 hover:bg-leaf-700 text-white text-xs py-2.5 px-5 flex items-center justify-center gap-1.5 shadow-sm shrink-0"
+                  className="btn bg-leaf-600 hover:bg-leaf-700 text-white text-xs py-2.5 px-4 flex items-center justify-center gap-1.5 shadow-sm shrink-0"
                 >
                   <Save size={14} />
-                  Save Google Sheet Link
+                  Save Link
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTestWebhook}
+                  disabled={testingWebhook}
+                  className="btn bg-sky-600 hover:bg-sky-700 text-white text-xs py-2.5 px-4 flex items-center justify-center gap-1.5 shadow-sm shrink-0 disabled:opacity-50"
+                >
+                  <RefreshCw size={14} className={testingWebhook ? 'animate-spin' : ''} />
+                  {testingWebhook ? 'Testing...' : 'Test Webhook'}
                 </button>
               </div>
 
@@ -1338,6 +1357,23 @@ export default function Admin({ onNavigate }: Props) {
                 <p className="text-xs font-bold text-leaf-700 flex items-center gap-1.5 animate-fade-up">
                   <CheckCircle2 size={14} /> Google Sheet webhook saved!
                 </p>
+              )}
+
+              {webhookTestResult && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2 animate-fade-up ${
+                    webhookTestResult.success
+                      ? 'bg-leaf-50 border border-leaf-200 text-leaf-800'
+                      : 'bg-red-50 border border-red-200 text-red-800'
+                  }`}
+                >
+                  {webhookTestResult.success ? (
+                    <CheckCircle2 size={15} className="text-leaf-600 shrink-0" />
+                  ) : (
+                    <AlertCircle size={15} className="text-red-600 shrink-0" />
+                  )}
+                  <span>{webhookTestResult.message}</span>
+                </div>
               )}
             </div>
 

@@ -2,83 +2,147 @@
  * Google Apps Script for Paras Kachoriwala Customer Feedback Sync
  * 
  * Instructions:
- * 1. Open Google Sheets (https://sheets.new)
- * 2. Create column headers in Row 1:
- *    A1: Timestamp | B1: Customer Name | C1: Overall Rating | D1: Food Rating | E1: Service Rating | F1: Cleanliness Rating | G1: Feedback Message
- * 3. In the top menu, go to: Extensions > Apps Script
- * 4. Delete any existing code, and paste this entire code
- * 5. Click "Save" (disk icon)
- * 6. Click "Deploy" (top right) > "New deployment"
- * 7. Click Select type (gear icon) > "Web app"
- * 8. Set:
- *    - Description: Paras Feedback Webhook
- *    - Execute as: Me (your Google account)
- *    - Who has access: Anyone
- * 9. Click "Deploy" and authorize permissions if prompted.
- * 10. Copy the Web App URL (starts with https://script.google.com/macros/s/...)
- * 11. Paste this URL into your website's Author Portal (or in .env as VITE_GOOGLE_SHEETS_URL).
+ * 1. Open your Google Sheet (https://sheets.new or open your existing sheet).
+ * 2. Note: You can name your tab "Feedback" or "Sheet1" (or keep whatever name you have).
+ * 3. In the top menu of Google Sheets, click: Extensions > Apps Script
+ * 4. Replace all code in the editor with this script.
+ * 5. Click "Save" (disk icon).
+ * 6. Click "Deploy" (top right) > "Manage deployments" (or "New deployment").
+ *    - If editing: click the Pencil (edit) icon, select "New version", and click Deploy.
+ *    - If new: click "New deployment", select type "Web app", set:
+ *        - Description: Paras Feedback Webhook
+ *        - Execute as: Me
+ *        - Who has access: Anyone
+ * 7. Click "Deploy", authorize access when prompted.
+ * 8. Copy the Web App URL (starts with https://script.google.com/macros/s/.../exec).
+ * 9. Paste that URL into .env (VITE_GOOGLE_SHEETS_URL=...) or in the website's Admin Portal.
  */
+
+function getTargetSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // 1. Check for tab named "Feedback"
+  var sheet = ss.getSheetByName("Feedback");
+  if (sheet) return sheet;
+
+  // 2. Check for tab named "Sheet1" or "Sheet 1"
+  sheet = ss.getSheetByName("Sheet1") || ss.getSheetByName("Sheet 1");
+  if (sheet) return sheet;
+
+  // 3. Check active sheet
+  sheet = ss.getActiveSheet();
+  if (sheet) return sheet;
+
+  // 4. If all else fails, create "Feedback" tab automatically
+  return ss.insertSheet("Feedback");
+}
+
+function ensureHeaders(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      "Timestamp",
+      "Customer Name",
+      "Overall Rating",
+      "Food Rating",
+      "Service Rating",
+      "Cleanliness Rating",
+      "Feedback Message"
+    ]);
+    var headerRange = sheet.getRange(1, 1, 1, 7);
+    headerRange.setFontWeight("bold");
+    headerRange.setBackground("#9c4c18");
+    headerRange.setFontColor("#ffffff");
+  }
+}
+
+function parsePayload(e) {
+  var data = {};
+  if (!e) return data;
+
+  if (e.postData && e.postData.contents) {
+    try {
+      data = JSON.parse(e.postData.contents);
+    } catch (err) {
+      // Fallback if contents is URL-encoded string
+      if (typeof e.postData.contents === 'string') {
+        var pairs = e.postData.contents.split('&');
+        pairs.forEach(function(pair) {
+          var kv = pair.split('=');
+          if (kv.length === 2) {
+            data[decodeURIComponent(kv[0])] = decodeURIComponent(kv[1].replace(/\+/g, ' '));
+          }
+        });
+      }
+    }
+  }
+
+  if (Object.keys(data).length === 0 && e.parameter) {
+    data = e.parameter;
+  }
+
+  return data;
+}
+
+function recordFeedback(data) {
+  var sheet = getTargetSheet();
+  ensureHeaders(sheet);
+
+  var timestamp = data.timestamp || new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  var customerName = data.customer_name || data.customerName || "Anonymous Customer";
+  var overallRating = Number(data.overall_rating || data.overallRating || 5);
+  var foodRating = Number(data.food_rating || data.foodRating || 0);
+  var serviceRating = Number(data.service_rating || data.serviceRating || 0);
+  var cleanlinessRating = Number(data.cleanliness_rating || data.cleanlinessRating || 0);
+  var message = data.message || data.feedback || "";
+
+  sheet.appendRow([
+    timestamp,
+    customerName,
+    overallRating,
+    foodRating,
+    serviceRating,
+    cleanlinessRating,
+    message
+  ]);
+
+  return {
+    status: "success",
+    message: "Feedback recorded successfully in sheet: " + sheet.getName(),
+    sheet: sheet.getName(),
+    timestamp: timestamp
+  };
+}
 
 function doPost(e) {
   try {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    
-    // Ensure header row exists
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow([
-        "Timestamp",
-        "Customer Name",
-        "Overall Rating",
-        "Food Rating",
-        "Service Rating",
-        "Cleanliness Rating",
-        "Feedback Message"
-      ]);
-      // Format header row with bold & background
-      var headerRange = sheet.getRange(1, 1, 1, 7);
-      headerRange.setFontWeight("bold");
-      headerRange.setBackground("#9c4c18");
-      headerRange.setFontColor("#ffffff");
-    }
+    var data = parsePayload(e);
+    var result = recordFeedback(data);
 
-    var data;
-    if (e.postData && e.postData.contents) {
-      data = JSON.parse(e.postData.contents);
-    } else if (e.parameter) {
-      data = e.parameter;
-    } else {
-      data = {};
-    }
-
-    var timestamp = data.timestamp || new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-    var customerName = data.customer_name || "Anonymous";
-    var overallRating = data.overall_rating || 0;
-    var foodRating = data.food_rating || 0;
-    var serviceRating = data.service_rating || 0;
-    var cleanlinessRating = data.cleanliness_rating || 0;
-    var message = data.message || "";
-
-    // Append new row
-    sheet.appendRow([
-      timestamp,
-      customerName,
-      overallRating,
-      foodRating,
-      serviceRating,
-      cleanlinessRating,
-      message
-    ]);
-
-    return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "Feedback recorded successfully" }))
+    return ContentService.createTextOutput(JSON.stringify(result))
       .setMimeType(ContentService.MimeType.JSON);
-
   } catch (error) {
-    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: error.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      message: error.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
 function doGet(e) {
-  return ContentService.createTextOutput("Paras Kachoriwala Google Sheets Feedback Service is Live!");
-}
+  // If query parameters are present, allow recording feedback via GET as fallback
+  if (e && e.parameter && (e.parameter.overall_rating || e.parameter.message)) {
+    try {
+      var result = recordFeedback(e.parameter);
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+  }
 
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "success",
+    message: "Paras Kachoriwala Google Sheets Feedback Service is Live and Ready!"
+  })).setMimeType(ContentService.MimeType.JSON);
+}

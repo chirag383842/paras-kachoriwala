@@ -1,15 +1,16 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, lazy, Suspense } from 'react';
 import Navbar, { type Page } from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import Home from '@/pages/Home';
-import Menu from '@/pages/Menu';
-import Gallery from '@/pages/Gallery';
-import Feedback from '@/pages/Feedback';
-import Directions from '@/pages/Directions';
-import Admin from '@/pages/Admin';
 import { BRAND } from '@/lib/constants';
 import { LoadingProvider, useLoading } from '@/lib/loadingContext';
 import SmartLoadingScreen from '@/components/SmartLoadingScreen';
+
+const Menu = lazy(() => import('@/pages/Menu'));
+const Gallery = lazy(() => import('@/pages/Gallery'));
+const Feedback = lazy(() => import('@/pages/Feedback'));
+const Directions = lazy(() => import('@/pages/Directions'));
+const Admin = lazy(() => import('@/pages/Admin'));
 
 const PAGE_META: Record<Page, { title: string; description: string }> = {
   home: {
@@ -87,7 +88,15 @@ function AppInner() {
       <div className="min-h-screen flex flex-col">
         <Navbar current={page} onNavigate={navigate} />
         <main className="flex-1">
-          {pageContent}
+          <Suspense
+            fallback={
+              <div className="flex min-h-[50vh] items-center justify-center">
+                <div className="h-8 w-8 animate-spin rounded-full border-3 border-spice-500 border-t-transparent" />
+              </div>
+            }
+          >
+            {pageContent}
+          </Suspense>
         </main>
         <Footer onNavigate={navigate} />
       </div>

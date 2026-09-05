@@ -11,7 +11,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ['lucide-react'],
+    include: ['lucide-react', '@supabase/supabase-js'],
   },
   build: {
     target: 'es2019',

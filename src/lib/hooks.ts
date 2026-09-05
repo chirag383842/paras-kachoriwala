@@ -76,6 +76,7 @@ const INITIAL_PINNED_REVIEWS: Review[] = [
       'Paras Kachoriwala has been my family go-to for years. The Regular Kachori is always crispy on the outside and perfectly stuffed inside — Jain Kachori is equally authentic without onion-garlic. Fresh chutneys make every bite special.',
     created_at: '2025-06-14T18:30:00.000Z',
     display_order: 1,
+    source: 'justdial',
   },
   {
     id: 'jd-002',
@@ -85,6 +86,7 @@ const INITIAL_PINNED_REVIEWS: Review[] = [
       'I live nearby and visit almost every evening. The Swaminarayan Kachori is satvik, tasty and strictly prepared the way we prefer. Their Bhel is light, crunchy and never oily. Best part — reasonable prices and large, jumbo-sized portions.',
     created_at: '2025-07-02T19:05:00.000Z',
     display_order: 2,
+    source: 'justdial',
   },
   {
     id: 'jd-003',
@@ -94,6 +96,7 @@ const INITIAL_PINNED_REVIEWS: Review[] = [
       'Took my family of 6 last week. The counter token system is smooth — no confusion at all. Kachori was fresh and filling. Sometimes the evening rush can be busy but wait is worthwhile. Recommended for authentic street-style kachori.',
     created_at: '2025-05-21T20:12:00.000Z',
     display_order: 3,
+    source: 'justdial',
   },
   {
     id: 'jd-004',
@@ -103,6 +106,7 @@ const INITIAL_PINNED_REVIEWS: Review[] = [
       'We order almost every weekend for the entire joint family. Kids love the Bhel and elders enjoy the Jain Kachori. The taste has been consistent for as long as I remember. Paras ji ke kachori mein woh baat hai!',
     created_at: '2025-08-09T19:20:00.000Z',
     display_order: 4,
+    source: 'justdial',
   },
   {
     id: 'jd-005',
@@ -112,6 +116,7 @@ const INITIAL_PINNED_REVIEWS: Review[] = [
       'As someone who has tried kachori shops across the city, Paras Kachoriwala stands out for freshness. Every piece is puffed, the filling is generous, and the chutneys are balanced — not too sweet, not too tangy. Pure 5 stars from a regular customer.',
     created_at: '2025-04-30T19:45:00.000Z',
     display_order: 5,
+    source: 'justdial',
   },
   {
     id: 'jd-006',
@@ -121,6 +126,7 @@ const INITIAL_PINNED_REVIEWS: Review[] = [
       'Genuine local kachori place. Cash only, token system, very orderly service. Portions are big — one jumbo kachori with Bhel is enough for two adults. My friends from Mumbai were really impressed when I took them here last month.',
     created_at: '2025-07-27T20:30:00.000Z',
     display_order: 6,
+    source: 'justdial',
   },
 ];
 
@@ -138,9 +144,9 @@ const STORAGE_GALLERY_KEY = 'pk_local_gallery_v3';
 const STORAGE_FEEDBACK_KEY = 'pk_all_feedback_records_v3';
 const STORAGE_DELETED_REVIEWS_KEY = 'pk_deleted_review_ids_v3';
 
-const CACHE_TTL_SHORT = 15_000;
-const CACHE_TTL_MEDIUM = 30_000;
-const REQUEST_TIMEOUT_MS = 10_000;
+const CACHE_TTL_SHORT = 10_000;
+const CACHE_TTL_MEDIUM = 20_000;
+const REQUEST_TIMEOUT_MS = 2_500;
 
 // Cross-tab Real-Time Broadcast Channel
 let syncBroadcastChannel: BroadcastChannel | null = null;
@@ -319,7 +325,13 @@ export function useProducts() {
       channel = null;
     }
 
+    // Periodic background sync for non-websocket clients
+    const pollInterval = window.setInterval(() => {
+      fetchData();
+    }, 30_000);
+
     return () => {
+      window.clearInterval(pollInterval);
       window.removeEventListener('pk_products_changed', handleLocalUpdate);
       syncBroadcastChannel?.removeEventListener('message', handleBroadcast);
       if (channel) {
@@ -343,6 +355,7 @@ export function useStoreStatus() {
     const cached = getLocalStatus();
     return { data: cached ?? DEFAULT_STORE_STATUS, loading: false, error: null };
   });
+  const [, setTimeTick] = useState(0);
 
   const fetchData = useCallback(async () => {
     try {
@@ -426,7 +439,14 @@ export function useStoreStatus() {
       channel = null;
     }
 
+    // 15-second timer for Indian Standard Time (IST) auto-trigger & periodic sync
+    const timerInterval = window.setInterval(() => {
+      setTimeTick((t) => t + 1);
+      fetchData();
+    }, 15_000);
+
     return () => {
+      window.clearInterval(timerInterval);
       window.removeEventListener('pk_store_status_changed', handleLocalUpdate);
       syncBroadcastChannel?.removeEventListener('message', handleBroadcast);
       if (channel) {
@@ -537,7 +557,12 @@ export function useGallery() {
       channel = null;
     }
 
+    const pollInterval = window.setInterval(() => {
+      fetchGallery();
+    }, 30_000);
+
     return () => {
+      window.clearInterval(pollInterval);
       window.removeEventListener('pk_gallery_changed', handleGalleryUpdate);
       syncBroadcastChannel?.removeEventListener('message', handleBroadcast);
       if (channel) {
@@ -591,6 +616,7 @@ export function useReviews() {
               customer_name: f.customer_name || 'Verified Customer',
               display_order: i + 1,
               created_at: f.created_at,
+              source: 'verified',
             });
           }
         });
@@ -605,6 +631,7 @@ export function useReviews() {
             customer_name: f.customer_name || 'Verified Customer',
             display_order: i + 1,
             created_at: f.created_at,
+            source: 'verified',
           });
         }
       });
@@ -612,19 +639,19 @@ export function useReviews() {
       const seenIds = new Set<string>();
       const merged: Review[] = [];
 
-      // Add featured approved reviews first
-      approvedReviews.forEach((r) => {
-        if (!deletedIds.has(r.id) && !seenIds.has(r.id)) {
-          seenIds.add(r.id);
-          merged.push(r);
-        }
-      });
-
-      // Add pinned reviews (unless explicitly deleted)
+      // Requirement #4: First Justdial reviews are shown
       INITIAL_PINNED_REVIEWS.forEach((r) => {
         if (!deletedIds.has(r.id) && !seenIds.has(r.id)) {
           seenIds.add(r.id);
-          merged.push(r);
+          merged.push({ ...r, source: 'justdial' });
+        }
+      });
+
+      // Requirement #4: After that, verified reviews are shown
+      approvedReviews.forEach((r) => {
+        if (!deletedIds.has(r.id) && !seenIds.has(r.id)) {
+          seenIds.add(r.id);
+          merged.push({ ...r, source: 'verified' });
         }
       });
 
@@ -679,7 +706,13 @@ export function useReviews() {
       channel = null;
     }
 
+    // 30-second periodic sync for real-time reviews across all users
+    const pollInterval = window.setInterval(() => {
+      fetchReviews();
+    }, 30_000);
+
     return () => {
+      window.clearInterval(pollInterval);
       window.removeEventListener('pk_reviews_changed', handleReviewsChange);
       syncBroadcastChannel?.removeEventListener('message', handleBroadcast);
       if (channel) {
@@ -793,7 +826,13 @@ export function useFeedbackList() {
       channel = null;
     }
 
+    // 30-second periodic sync for admin panel
+    const pollInterval = window.setInterval(() => {
+      fetchFeedback();
+    }, 30_000);
+
     return () => {
+      window.clearInterval(pollInterval);
       window.removeEventListener('pk_reviews_changed', handleReviewsChange);
       syncBroadcastChannel?.removeEventListener('message', handleBroadcast);
       if (channel) {
@@ -862,7 +901,11 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<{ succes
     return { success: false, error: 'Please share at least a few words of feedback.' };
   }
 
+  const customerName = payload.customer_name.trim() || 'Anonymous Customer';
   const newId = `fb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const nowIso = new Date().toISOString();
+
+  // Mark approved: true by default so customer reviews immediately show in Verified Reviews
   const newRecord: Feedback = {
     id: newId,
     overall_rating: overallRating,
@@ -870,9 +913,9 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<{ succes
     service_rating: payload.service_rating || null,
     cleanliness_rating: payload.cleanliness_rating || null,
     message,
-    customer_name: payload.customer_name.trim() || 'Anonymous Customer',
-    approved: false,
-    created_at: new Date().toISOString(),
+    customer_name: customerName,
+    approved: true,
+    created_at: nowIso,
   };
 
   // 1. Immediately store in local feedback records for instantaneous display
@@ -886,19 +929,30 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<{ succes
 
   // 2. Insert into Supabase
   try {
-    const { error: sbError } = await withTimeout(() =>
+    const { data: inserted, error: sbError } = await withTimeout(() =>
       supabase.from('feedback').insert({
         overall_rating: overallRating,
         food_rating: payload.food_rating || null,
         service_rating: payload.service_rating || null,
         cleanliness_rating: payload.cleanliness_rating || null,
         message,
-        customer_name: payload.customer_name.trim() || null,
-        approved: false,
-      })
+        customer_name: customerName,
+        approved: true,
+      }).select().maybeSingle()
     );
+
     if (sbError) {
       console.warn('Supabase feedback insert notice:', sbError.message);
+    } else if (inserted && inserted.id) {
+      // Update local storage ID to match Supabase database ID for future admin edits
+      newRecord.id = inserted.id;
+      try {
+        const current = getLocalFeedbackList();
+        const updated = current.map((f) => (f.id === newId ? { ...f, id: inserted.id } : f));
+        saveLocalFeedbackList(updated);
+      } catch {
+        /* ignore */
+      }
     }
   } catch (err) {
     console.warn('Supabase feedback insert notice:', err);
@@ -906,7 +960,7 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<{ succes
 
   // 3. Send to Google Sheets webhook in real-time
   void sendFeedbackToGoogleSheet({
-    customer_name: payload.customer_name.trim() || 'Anonymous Customer',
+    customer_name: customerName,
     overall_rating: overallRating,
     food_rating: payload.food_rating,
     service_rating: payload.service_rating,
