@@ -18,6 +18,7 @@ export type StoreStatus = {
   last_updated: string;
   updated_by?: string;
   closed_for_date?: string | null;
+  force_open_date?: string | null;
 };
 
 export type Feedback = {

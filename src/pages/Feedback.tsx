@@ -62,7 +62,7 @@ export default function Feedback() {
             </span>
             <h2 className="mt-6 font-display text-3xl font-bold text-charcoal-900">Thank You!</h2>
             <p className="mt-3 text-charcoal-600">
-              Your feedback means a lot to us. We'll keep working hard to serve you the best kachori and bhel.
+              Your feedback means a lot to us. It is waiting for the owner to feature it on the home page.
             </p>
             <button onClick={() => setStatus('idle')} className="btn-outline mt-8">
               Share Another Review

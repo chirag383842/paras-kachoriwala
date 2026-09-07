@@ -54,6 +54,7 @@ export function getISTDate(date: Date = new Date()): {
     hour: 'numeric',
     minute: 'numeric',
     hour12: false,
+    hourCycle: 'h23',
     weekday: 'long',
   });
 
@@ -97,7 +98,8 @@ export function isWithinScheduleHours(now: Date = new Date()): boolean {
  * Computes active store status taking into account:
  * 1. "Close Shop for Today" (auto-resets the next day in IST) — strictly maintained!
  * 2. Manual author close overrides — strictly maintained!
- * 3. Automatic Indian Timing schedule (7:00 PM to 11:30 PM IST) like an automatic trigger
+ * 3. Author "OPEN NOW" override (force_open_date = today IST) for the full IST date
+ * 4. Automatic Indian Timing schedule (7:00 PM to 11:30 PM IST)
  */
 export function calculateStoreStatus(status?: StoreStatus | null): {
   isOpen: boolean;
@@ -124,7 +126,21 @@ export function calculateStoreStatus(status?: StoreStatus | null): {
   const istAmPm = ist.hour >= 12 ? 'PM' : 'AM';
   const istTimeStr = `${istHour12}:${String(ist.minute).padStart(2, '0')} ${istAmPm} IST`;
 
-  // 1. Maintain "Close Shop for Today" feature (resets automatically next day in IST)
+  // 1. An explicit owner-open override applies for today only.
+  const openedEarlyToday = status?.force_open_date === ist.dateString && status.is_open === true;
+  if (openedEarlyToday) {
+    return {
+      isOpen: true,
+      isClosedForToday: false,
+      isAutoScheduled: false,
+      nextOpenText: 'Open Now (owner override for today)',
+      todayScheduleDisplay: todaySchedule.display,
+      statusLabel: 'Open Now',
+      currentISTTimeDisplay: istTimeStr,
+    };
+  }
+
+  // 2. A close-for-today override applies only on its stored IST date.
   const isClosedToday = status?.closed_for_date === ist.dateString;
   if (isClosedToday) {
     return {
@@ -138,7 +154,7 @@ export function calculateStoreStatus(status?: StoreStatus | null): {
     };
   }
 
-  // 2. Maintain author manual close override
+  // 3. Keep a manual close fallback compatible with older saved records.
   if (status && status.is_open === false && !status.closed_for_date) {
     return {
       isOpen: false,
@@ -151,7 +167,7 @@ export function calculateStoreStatus(status?: StoreStatus | null): {
     };
   }
 
-  // 3. Automatic trigger per Indian Timing (7:00 PM - 11:30 PM IST)
+  // 4. Automatic trigger per Indian Timing (7:00 PM - 11:30 PM IST)
   return {
     isOpen: inScheduleHours,
     isClosedForToday: false,

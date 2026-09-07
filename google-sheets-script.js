@@ -41,6 +41,7 @@ function ensureHeaders(sheet) {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow([
       "Timestamp",
+      "Record ID",
       "Customer Name",
       "Overall Rating",
       "Food Rating",
@@ -48,10 +49,21 @@ function ensureHeaders(sheet) {
       "Cleanliness Rating",
       "Feedback Message"
     ]);
-    var headerRange = sheet.getRange(1, 1, 1, 7);
+    var headerRange = sheet.getRange(1, 1, 1, 8);
     headerRange.setFontWeight("bold");
     headerRange.setBackground("#9c4c18");
     headerRange.setFontColor("#ffffff");
+    return;
+  }
+
+  // Migrate the previous seven-column layout without deleting existing reviews.
+  var headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getDisplayValues()[0];
+  if (headers.indexOf("Record ID") === -1) {
+    sheet.insertColumnBefore(2);
+    sheet.getRange(1, 2).setValue("Record ID");
+    sheet.getRange(1, 2).setFontWeight("bold");
+    sheet.getRange(1, 2).setBackground("#9c4c18");
+    sheet.getRange(1, 2).setFontColor("#ffffff");
   }
 }
 
@@ -87,6 +99,7 @@ function recordFeedback(data) {
   var sheet = getTargetSheet();
   ensureHeaders(sheet);
 
+  var recordId = String(data.record_id || data.recordId || "").trim();
   var timestamp = data.timestamp || new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
   var customerName = data.customer_name || data.customerName || "Anonymous Customer";
   var overallRating = Number(data.overall_rating || data.overallRating || 5);
@@ -94,9 +107,34 @@ function recordFeedback(data) {
   var serviceRating = Number(data.service_rating || data.serviceRating || 0);
   var cleanlinessRating = Number(data.cleanliness_rating || data.cleanlinessRating || 0);
   var message = data.message || data.feedback || "";
+  var fingerprint = [customerName, overallRating, foodRating, serviceRating, cleanlinessRating, message]
+    .join("|")
+    .toLowerCase()
+    .trim();
+
+  // Idempotency: retries and Save Link & Sync Reviews must never create duplicates.
+  if (sheet.getLastRow() > 1) {
+    var existingRows = sheet.getRange(2, 2, sheet.getLastRow() - 1, 7).getDisplayValues();
+    for (var i = 0; i < existingRows.length; i++) {
+      var existingId = String(existingRows[i][0]).trim();
+      var existingFingerprint = [existingRows[i][1], existingRows[i][2], existingRows[i][3], existingRows[i][4], existingRows[i][5], existingRows[i][6]]
+        .join("|")
+        .toLowerCase()
+        .trim();
+      if ((recordId && existingId === recordId) || ((!recordId || !existingId) && existingFingerprint === fingerprint)) {
+        return {
+          status: "duplicate",
+          message: "Feedback already exists; duplicate skipped.",
+          sheet: sheet.getName(),
+          record_id: recordId
+        };
+      }
+    }
+  }
 
   sheet.appendRow([
     timestamp,
+    recordId,
     customerName,
     overallRating,
     foodRating,

@@ -37,6 +37,7 @@ export function setGoogleSheetUrl(url: string): void {
 }
 
 export type GoogleSheetFeedbackData = {
+  record_id?: string;
   customer_name?: string;
   overall_rating: number;
   food_rating?: number;
@@ -54,6 +55,7 @@ export async function sendFeedbackToGoogleSheet(data: GoogleSheetFeedbackData): 
 
   const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
   const payload = {
+    record_id: data.record_id?.trim() || '',
     timestamp,
     customer_name: data.customer_name?.trim() || 'Anonymous Customer',
     overall_rating: data.overall_rating,
@@ -82,6 +84,7 @@ export async function sendFeedbackToGoogleSheet(data: GoogleSheetFeedbackData): 
     // Fallback attempt: GET request with query params
     try {
       const q = new URLSearchParams({
+        record_id: payload.record_id,
         timestamp: payload.timestamp,
         customer_name: payload.customer_name,
         overall_rating: String(payload.overall_rating),
@@ -101,6 +104,22 @@ export async function sendFeedbackToGoogleSheet(data: GoogleSheetFeedbackData): 
       return { success: false, error: message };
     }
   }
+}
+
+export async function syncFeedbackToGoogleSheet(
+  records: GoogleSheetFeedbackData[]
+): Promise<{ success: boolean; synced: number; error?: string }> {
+  let synced = 0;
+
+  for (const record of records) {
+    const result = await sendFeedbackToGoogleSheet(record);
+    if (!result.success) {
+      return { success: false, synced, error: result.error || 'A review could not be synced.' };
+    }
+    synced += 1;
+  }
+
+  return { success: true, synced };
 }
 
 /**
@@ -129,7 +148,7 @@ export async function testGoogleSheetWebhook(targetUrl?: string): Promise<{ succ
       success: true,
       message: jsonStatus || (text.length > 80 ? text.slice(0, 80) + '...' : text) || 'Connected successfully to Google Apps Script webhook!',
     };
-  } catch (err) {
+  } catch {
     // If CORS blocked reading the response directly, test with no-cors probe
     try {
       await fetch(url, { method: 'GET', mode: 'no-cors', redirect: 'follow' });

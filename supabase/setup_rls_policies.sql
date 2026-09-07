@@ -10,6 +10,10 @@ ALTER TABLE IF EXISTS store_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS gallery ENABLE ROW LEVEL SECURITY;
 
+-- Store status overrides used by the Author portal
+ALTER TABLE IF EXISTS store_status ADD COLUMN IF NOT EXISTS closed_for_date text;
+ALTER TABLE IF EXISTS store_status ADD COLUMN IF NOT EXISTS force_open_date text;
+
 -- 2. Clean up existing conflicting policies
 DROP POLICY IF EXISTS "allow_all_products" ON products;
 DROP POLICY IF EXISTS "public_read_products" ON products;

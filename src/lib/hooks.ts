@@ -136,6 +136,7 @@ const DEFAULT_STORE_STATUS: StoreStatus = {
   crowd_level: 'Moderate',
   last_updated: new Date().toISOString(),
   closed_for_date: null,
+  force_open_date: null,
 };
 
 const STORAGE_STATUS_KEY = 'pk_local_store_status_v3';
@@ -169,6 +170,9 @@ export function broadcastRealtimeEvent(type: string, data?: unknown) {
 function toErrMsg(err: unknown, fallback = 'Request failed'): string {
   if (err instanceof Error) return err.message || fallback;
   if (typeof err === 'string') return err || fallback;
+  if (err && typeof err === 'object' && 'message' in err && typeof err.message === 'string') {
+    return err.message || fallback;
+  }
   return fallback;
 }
 
@@ -905,7 +909,6 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<{ succes
   const newId = `fb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const nowIso = new Date().toISOString();
 
-  // Mark approved: true by default so customer reviews immediately show in Verified Reviews
   const newRecord: Feedback = {
     id: newId,
     overall_rating: overallRating,
@@ -914,7 +917,7 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<{ succes
     cleanliness_rating: payload.cleanliness_rating || null,
     message,
     customer_name: customerName,
-    approved: true,
+    approved: false,
     created_at: nowIso,
   };
 
@@ -937,7 +940,7 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<{ succes
         cleanliness_rating: payload.cleanliness_rating || null,
         message,
         customer_name: customerName,
-        approved: true,
+        approved: false,
       }).select().maybeSingle()
     );
 
@@ -960,6 +963,7 @@ export async function submitFeedback(payload: FeedbackPayload): Promise<{ succes
 
   // 3. Send to Google Sheets webhook in real-time
   void sendFeedbackToGoogleSheet({
+    record_id: newRecord.id,
     customer_name: customerName,
     overall_rating: overallRating,
     food_rating: payload.food_rating,
@@ -983,6 +987,7 @@ export async function updateStoreStatus(status: {
   is_open: boolean;
   crowd_level: string;
   closed_for_date?: string | null;
+  force_open_date?: string | null;
 }): Promise<{ success: boolean; error?: string }> {
   const newStatus: StoreStatus = {
     id: 'store_status_main',
@@ -990,6 +995,7 @@ export async function updateStoreStatus(status: {
     crowd_level: status.crowd_level,
     last_updated: new Date().toISOString(),
     closed_for_date: status.closed_for_date ?? null,
+    force_open_date: status.force_open_date ?? null,
   };
 
   // 1. Save to localStorage immediately
@@ -1010,7 +1016,7 @@ export async function updateStoreStatus(status: {
       supabase.from('store_status').select('id').limit(1).maybeSingle()
     );
     if (existing && existing.id) {
-      await withTimeout(() =>
+      const { error } = await withTimeout(() =>
         supabase
           .from('store_status')
           .update({
@@ -1018,21 +1024,26 @@ export async function updateStoreStatus(status: {
             crowd_level: status.crowd_level,
             last_updated: newStatus.last_updated,
             closed_for_date: newStatus.closed_for_date,
+            force_open_date: newStatus.force_open_date,
           })
           .eq('id', existing.id)
       );
+      if (error) throw error;
     } else {
-      await withTimeout(() =>
+      const { error } = await withTimeout(() =>
         supabase.from('store_status').insert({
           is_open: status.is_open,
           crowd_level: status.crowd_level,
           last_updated: newStatus.last_updated,
           closed_for_date: newStatus.closed_for_date,
+          force_open_date: newStatus.force_open_date,
         })
       );
+      if (error) throw error;
     }
   } catch (err) {
     console.warn('Supabase remote status update notice:', err);
+    return { success: false, error: toErrMsg(err, 'Unable to publish store status.') };
   }
 
   return { success: true };

@@ -43,11 +43,17 @@ import {
   updateGalleryImage,
   deleteGalleryImage,
 } from '@/lib/hooks';
-import { getGoogleSheetUrl, setGoogleSheetUrl, testGoogleSheetWebhook } from '@/lib/googleSheets';
+import {
+  getGoogleSheetUrl,
+  setGoogleSheetUrl,
+  syncFeedbackToGoogleSheet,
+  testGoogleSheetWebhook,
+} from '@/lib/googleSheets';
 import { CROWD_META, type CrowdLevel, formatTime, getISTDate } from '@/lib/constants';
 import { GALLERY_CATEGORIES } from '@/lib/galleryData';
 import type { Page } from '@/components/Navbar';
 import type { GalleryImage, GalleryCategory } from '@/lib/types';
+import Logo from '@/components/Logo';
 import StarRating from '@/components/StarRating';
 import { SectionSkeleton, SectionError } from '@/components/SectionLoader';
 
@@ -73,6 +79,7 @@ export default function Admin({ onNavigate }: Props) {
   const [crowd, setCrowd] = useState<CrowdLevel>('Moderate');
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [statusError, setStatusError] = useState('');
 
   // Products management state
   const { data: products, error: productsError, refetch: refetchProducts } = useProducts();
@@ -99,6 +106,7 @@ export default function Admin({ onNavigate }: Props) {
   // Google Sheets state
   const [sheetUrl, setSheetUrl] = useState(getGoogleSheetUrl());
   const [sheetUrlSaved, setSheetUrlSaved] = useState(false);
+  const [syncingReviews, setSyncingReviews] = useState(false);
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -190,21 +198,38 @@ export default function Admin({ onNavigate }: Props) {
   };
 
   // 1. Store Status Actions
-  const handleSaveStatus = async (forcedOpen?: boolean) => {
+  const handleSaveStatus = async (
+    forcedOpen?: boolean,
+    options?: { resumeSchedule?: boolean; openEarly?: boolean }
+  ) => {
     setStatusSaving(true);
     setStatusMessage('');
+    setStatusError('');
 
     const targetOpen = forcedOpen !== undefined ? forcedOpen : isOpen;
+    const ist = getISTDate();
+    let forceOpenDate: string | null = null;
+    if (!targetOpen || options?.resumeSchedule) {
+      forceOpenDate = null;
+    } else if (options?.openEarly) {
+      forceOpenDate = ist.dateString;
+    } else if (storeStatus?.force_open_date === ist.dateString) {
+      forceOpenDate = ist.dateString;
+    }
+
     const res = await updateStoreStatus({
       is_open: targetOpen,
       crowd_level: crowd,
-      closed_for_date: null,
+      closed_for_date: targetOpen ? null : ist.dateString,
+      force_open_date: forceOpenDate,
     });
 
     if (res.success) {
       setIsOpen(targetOpen);
       setStatusMessage('Store status published live in real time!');
       setTimeout(() => setStatusMessage(''), 4000);
+    } else {
+      setStatusError(res.error ?? 'Unable to publish store status. Please try again.');
     }
     setStatusSaving(false);
   };
@@ -220,12 +245,14 @@ export default function Admin({ onNavigate }: Props) {
 
     setStatusSaving(true);
     setStatusMessage('');
+    setStatusError('');
 
     const ist = getISTDate();
     const res = await updateStoreStatus({
       is_open: false,
       crowd_level: 'Low',
       closed_for_date: ist.dateString,
+      force_open_date: null,
     });
 
     if (res.success) {
@@ -234,6 +261,8 @@ export default function Admin({ onNavigate }: Props) {
         `Shop closed for today (${ist.dateString}). The system will automatically reset tomorrow at 7:00 PM IST.`
       );
       setTimeout(() => setStatusMessage(''), 5000);
+    } else {
+      setStatusError(res.error ?? 'Unable to close the shop for today. Please try again.');
     }
     setStatusSaving(false);
   };
@@ -403,9 +432,29 @@ export default function Admin({ onNavigate }: Props) {
     setFeedbackActionId(null);
   };
 
-  const handleSaveSheetUrl = () => {
+  const handleSaveSheetUrl = async () => {
     setGoogleSheetUrl(sheetUrl);
+    setSyncingReviews(true);
+    const syncResult = await syncFeedbackToGoogleSheet(
+      (feedbackList ?? []).map((feedback) => ({
+        record_id: feedback.id,
+        customer_name: feedback.customer_name ?? undefined,
+        overall_rating: feedback.overall_rating,
+        food_rating: feedback.food_rating ?? undefined,
+        service_rating: feedback.service_rating ?? undefined,
+        cleanliness_rating: feedback.cleanliness_rating ?? undefined,
+        message: feedback.message ?? undefined,
+        submitted_at: feedback.created_at,
+      }))
+    );
+    setSyncingReviews(false);
     setSheetUrlSaved(true);
+    setFeedbackActionError(syncResult.success ? '' : syncResult.error ?? 'Some reviews could not be synced.');
+    setFeedbackActionMsg(
+      syncResult.success
+        ? `${syncResult.synced} review${syncResult.synced === 1 ? '' : 's'} synced. Existing reviews were skipped automatically.`
+        : `Synced ${syncResult.synced} review${syncResult.synced === 1 ? '' : 's'}, but some reviews failed.`
+    );
     setTimeout(() => setSheetUrlSaved(false), 3500);
   };
 
@@ -425,9 +474,9 @@ export default function Admin({ onNavigate }: Props) {
       <div className="pt-24 sm:pt-28 pb-16 min-h-[85vh] flex items-center justify-center container-max">
         <div className="card max-w-md w-full p-8 sm:p-10 shadow-warm animate-scale-in">
           <div className="text-center">
-            <span className="grid h-16 w-16 mx-auto place-items-center rounded-2xl bg-gradient-to-br from-spice-500 to-spice-700 text-white shadow-warm">
-              <Lock size={28} />
-            </span>
+            <div className="flex justify-center">
+              <Logo size="md" />
+            </div>
             <div className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-spice-100 px-3 py-1 text-xs font-bold uppercase tracking-wider text-spice-700">
               <ShieldCheck size={14} />
               Author Access Portal
@@ -691,12 +740,18 @@ export default function Admin({ onNavigate }: Props) {
                   <button
                     type="button"
                     onClick={() => {
-                      setIsOpen(true);
-                      handleSaveStatus(true);
+                      if (
+                        !confirm(
+                          'Open the shop for today only? Normal Indian schedule will apply automatically tomorrow.'
+                        )
+                      ) {
+                        return;
+                      }
+                      handleSaveStatus(true, { openEarly: true });
                     }}
                     disabled={statusSaving}
                     className={`p-4 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-1.5 ${
-                      isOpen && !isClosedForToday
+                      storeComputed.isOpen
                         ? 'border-leaf-600 bg-leaf-50 ring-2 ring-leaf-500/30 text-leaf-900 shadow-md font-bold'
                         : 'border-spice-200 bg-white hover:border-leaf-300 text-charcoal-700 font-medium'
                     }`}
@@ -711,12 +766,18 @@ export default function Admin({ onNavigate }: Props) {
                   <button
                     type="button"
                     onClick={() => {
-                      setIsOpen(false);
+                      if (
+                        !confirm(
+                          'Close the shop for today only? It will follow the normal Indian schedule automatically tomorrow.'
+                        )
+                      ) {
+                        return;
+                      }
                       handleSaveStatus(false);
                     }}
                     disabled={statusSaving}
                     className={`p-4 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-1.5 ${
-                      !isOpen || isClosedForToday
+                      !storeComputed.isOpen
                         ? 'border-red-600 bg-red-50 ring-2 ring-red-500/30 text-red-900 shadow-md font-bold'
                         : 'border-spice-200 bg-white hover:border-red-300 text-charcoal-700 font-medium'
                     }`}
@@ -755,7 +816,7 @@ export default function Admin({ onNavigate }: Props) {
                     Clear any closure overrides and resume regular operating schedule (7:00 PM – 11:30 PM IST).
                   </p>
                   <button
-                    onClick={() => handleSaveStatus(true)}
+                    onClick={() => handleSaveStatus(true, { resumeSchedule: true })}
                     disabled={statusSaving}
                     className="btn bg-leaf-600 hover:bg-leaf-700 text-white text-xs py-2.5 px-4 w-full flex items-center justify-center gap-2 shadow-sm font-bold"
                   >
@@ -802,6 +863,13 @@ export default function Admin({ onNavigate }: Props) {
                 <div className="p-4 rounded-2xl bg-leaf-50 border border-leaf-200 text-leaf-800 text-sm font-semibold flex items-center gap-2 animate-fade-up">
                   <CheckCircle2 size={18} className="text-leaf-600" />
                   {statusMessage}
+                </div>
+              )}
+
+              {statusError && (
+                <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-sm font-semibold flex items-center gap-2 animate-fade-up">
+                  <AlertCircle size={18} className="text-red-600" />
+                  {statusError}
                 </div>
               )}
 
@@ -1337,10 +1405,11 @@ export default function Admin({ onNavigate }: Props) {
                 />
                 <button
                   onClick={handleSaveSheetUrl}
+                  disabled={syncingReviews}
                   className="btn bg-leaf-600 hover:bg-leaf-700 text-white text-xs py-2.5 px-4 flex items-center justify-center gap-1.5 shadow-sm shrink-0"
                 >
-                  <Save size={14} />
-                  Save Link
+                  {syncingReviews ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+                  {syncingReviews ? 'Syncing Reviews...' : 'Save Link & Sync Reviews'}
                 </button>
                 <button
                   type="button"
