@@ -366,6 +366,7 @@ export function useStoreStatus() {
       const result = await withDedupe<StoreStatus>(
         'sb:store_status',
         async () => {
+          const cached = getLocalStatus();
           try {
             const { data, error } = await withTimeout(() =>
               supabase
@@ -375,17 +376,48 @@ export function useStoreStatus() {
                 .maybeSingle()
             );
             if (error || !data) {
-              const cached = getLocalStatus();
               return cached ?? DEFAULT_STORE_STATUS;
             }
+
+            // Parse any serialized metadata from updated_by if present
+            let parsedClosedDate = (data as Record<string, unknown>).closed_for_date as string | null | undefined;
+            let parsedForceOpenDate = (data as Record<string, unknown>).force_open_date as string | null | undefined;
+            if (data.updated_by && typeof data.updated_by === 'string' && data.updated_by.startsWith('{')) {
+              try {
+                const meta = JSON.parse(data.updated_by);
+                if (meta.closed_for_date !== undefined) parsedClosedDate = meta.closed_for_date;
+                if (meta.force_open_date !== undefined) parsedForceOpenDate = meta.force_open_date;
+              } catch {
+                /* ignore */
+              }
+            }
+
+            const remoteStatus: StoreStatus = {
+              id: data.id || 'store_status_main',
+              is_open: Boolean(data.is_open),
+              crowd_level: data.crowd_level || 'Moderate',
+              last_updated: data.last_updated || new Date().toISOString(),
+              closed_for_date: parsedClosedDate ?? null,
+              force_open_date: parsedForceOpenDate ?? null,
+              updated_by: data.updated_by,
+            };
+
+            // If local storage has a more recent modification, do not let stale remote data overwrite it!
+            if (cached && cached.last_updated) {
+              const localTime = new Date(cached.last_updated).getTime();
+              const remoteTime = new Date(remoteStatus.last_updated).getTime();
+              if (localTime > remoteTime) {
+                return cached;
+              }
+            }
+
             try {
-              localStorage.setItem(STORAGE_STATUS_KEY, JSON.stringify(data));
+              localStorage.setItem(STORAGE_STATUS_KEY, JSON.stringify(remoteStatus));
             } catch {
               /* ignore */
             }
-            return data as StoreStatus;
+            return remoteStatus;
           } catch {
-            const cached = getLocalStatus();
             return cached ?? DEFAULT_STORE_STATUS;
           }
         },
@@ -988,62 +1020,94 @@ export async function updateStoreStatus(status: {
   crowd_level: string;
   closed_for_date?: string | null;
   force_open_date?: string | null;
+  override_mode?: 'force_open' | 'force_close' | null;
 }): Promise<{ success: boolean; error?: string }> {
+  const timestamp = new Date().toISOString();
+  const metaObj = {
+    closed_for_date: status.closed_for_date ?? null,
+    force_open_date: status.force_open_date ?? null,
+    override_mode:
+      status.override_mode ??
+      (status.force_open_date ? 'force_open' : status.closed_for_date ? 'force_close' : null),
+    updated_at: timestamp,
+  };
+
   const newStatus: StoreStatus = {
     id: 'store_status_main',
     is_open: status.is_open,
     crowd_level: status.crowd_level,
-    last_updated: new Date().toISOString(),
+    last_updated: timestamp,
     closed_for_date: status.closed_for_date ?? null,
     force_open_date: status.force_open_date ?? null,
+    override_mode: metaObj.override_mode,
+    updated_by: JSON.stringify(metaObj),
   };
 
-  // 1. Save to localStorage immediately
+  // 1. Immediately persist locally and broadcast so UI and all open tabs respond instantaneously
   try {
     localStorage.setItem(STORAGE_STATUS_KEY, JSON.stringify(newStatus));
   } catch {
     /* ignore */
   }
 
-  // 2. Broadcast across tabs and window
   invalidateCache('sb:store_status');
   broadcastRealtimeEvent('STORE_STATUS_CHANGED', newStatus);
   window.dispatchEvent(new Event('pk_store_status_changed'));
 
-  // 3. Update Supabase
+  // 2. Best-effort background remote sync to Supabase
   try {
     const { data: existing } = await withTimeout(() =>
       supabase.from('store_status').select('id').limit(1).maybeSingle()
     );
+
+    const fullPayload: Record<string, unknown> = {
+      is_open: status.is_open,
+      crowd_level: status.crowd_level,
+      last_updated: newStatus.last_updated,
+      closed_for_date: newStatus.closed_for_date,
+      force_open_date: newStatus.force_open_date,
+      updated_by: newStatus.updated_by,
+    };
+
     if (existing && existing.id) {
-      const { error } = await withTimeout(() =>
-        supabase
-          .from('store_status')
-          .update({
-            is_open: status.is_open,
-            crowd_level: status.crowd_level,
-            last_updated: newStatus.last_updated,
-            closed_for_date: newStatus.closed_for_date,
-            force_open_date: newStatus.force_open_date,
-          })
-          .eq('id', existing.id)
+      let { error } = await withTimeout(() =>
+        supabase.from('store_status').update(fullPayload).eq('id', existing.id)
       );
-      if (error) throw error;
-    } else {
-      const { error } = await withTimeout(() =>
-        supabase.from('store_status').insert({
+
+      // If columns don't exist in Supabase yet (PostgREST code 42703), fallback to standard columns
+      if (error && (error.code === '42703' || error.message?.includes('column'))) {
+        const fallbackPayload = {
           is_open: status.is_open,
           crowd_level: status.crowd_level,
           last_updated: newStatus.last_updated,
-          closed_for_date: newStatus.closed_for_date,
-          force_open_date: newStatus.force_open_date,
-        })
+          updated_by: newStatus.updated_by,
+        };
+        const res = await withTimeout(() =>
+          supabase.from('store_status').update(fallbackPayload).eq('id', existing.id)
+        );
+        error = res.error;
+      }
+      if (error) console.warn('Supabase remote status sync note:', error.message);
+    } else {
+      let { error } = await withTimeout(() =>
+        supabase.from('store_status').insert(fullPayload)
       );
-      if (error) throw error;
+      if (error && (error.code === '42703' || error.message?.includes('column'))) {
+        const fallbackPayload = {
+          is_open: status.is_open,
+          crowd_level: status.crowd_level,
+          last_updated: newStatus.last_updated,
+          updated_by: newStatus.updated_by,
+        };
+        const res = await withTimeout(() =>
+          supabase.from('store_status').insert(fallbackPayload)
+        );
+        error = res.error;
+      }
+      if (error) console.warn('Supabase remote status insert note:', error.message);
     }
   } catch (err) {
-    console.warn('Supabase remote status update notice:', err);
-    return { success: false, error: toErrMsg(err, 'Unable to publish store status.') };
+    console.warn('Supabase remote status update notice (offline/RLS):', err);
   }
 
   return { success: true };

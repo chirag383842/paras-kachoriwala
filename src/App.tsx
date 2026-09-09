@@ -31,7 +31,7 @@ const PAGE_META: Record<Page, { title: string; description: string }> = {
   },
   directions: {
     title: `Get Directions & Location — ${BRAND.name}`,
-    description: 'Get directions to Paras Kachoriwala on Google Maps. Operating daily from 7:00 PM to 11:30 PM with live status.',
+    description: 'Get directions to Paras Kachoriwala on Google Maps. Operating daily from 7:30 PM to 12:00 AM with live status.',
   },
   admin: {
     title: `Author Management Portal — ${BRAND.name}`,

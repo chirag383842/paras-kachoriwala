@@ -15,13 +15,13 @@ export const BRAND = {
 };
 
 export const STORE_HOURS = [
-  { day: 'Monday', open: '19:00', close: '23:30', display: '7:00 PM – 11:30 PM' },
-  { day: 'Tuesday', open: '19:00', close: '23:30', display: '7:00 PM – 11:30 PM' },
-  { day: 'Wednesday', open: '19:00', close: '23:30', display: '7:00 PM – 11:30 PM' },
-  { day: 'Thursday', open: '19:00', close: '23:30', display: '7:00 PM – 11:30 PM' },
-  { day: 'Friday', open: '19:00', close: '23:30', display: '7:00 PM – 11:30 PM' },
-  { day: 'Saturday', open: '19:00', close: '23:30', display: '7:00 PM – 11:30 PM' },
-  { day: 'Sunday', open: '19:00', close: '23:30', display: '7:00 PM – 11:30 PM' },
+  { day: 'Monday', open: '19:30', close: '24:00', display: '7:30 PM – 12:00 AM' },
+  { day: 'Tuesday', open: '19:30', close: '24:00', display: '7:30 PM – 12:00 AM' },
+  { day: 'Wednesday', open: '19:30', close: '24:00', display: '7:30 PM – 12:00 AM' },
+  { day: 'Thursday', open: '19:30', close: '24:00', display: '7:30 PM – 12:00 AM' },
+  { day: 'Friday', open: '19:30', close: '24:00', display: '7:30 PM – 12:00 AM' },
+  { day: 'Saturday', open: '19:30', close: '24:00', display: '7:30 PM – 12:00 AM' },
+  { day: 'Sunday', open: '19:30', close: '24:00', display: '7:30 PM – 12:00 AM' },
 ];
 
 export type CrowdLevel = 'Low' | 'Moderate' | 'Busy' | 'Very Busy';
@@ -80,7 +80,7 @@ export function getISTDate(date: Date = new Date()): {
 }
 
 /**
- * Checks if current time is within normal operating schedule hours (7:00 PM - 11:30 PM IST)
+ * Checks if current time is within normal operating schedule hours (7:30 PM - 12:00 AM IST)
  */
 export function isWithinScheduleHours(now: Date = new Date()): boolean {
   const { dayOfWeek, hour, minute } = getISTDate(now);
@@ -96,14 +96,15 @@ export function isWithinScheduleHours(now: Date = new Date()): boolean {
 
 /**
  * Computes active store status taking into account:
- * 1. "Close Shop for Today" (auto-resets the next day in IST) — strictly maintained!
- * 2. Manual author close overrides — strictly maintained!
- * 3. Author "OPEN NOW" override (force_open_date = today IST) for the full IST date
- * 4. Automatic Indian Timing schedule (7:00 PM to 11:30 PM IST)
+ * 1. "Close Shop for Today" / Immediate Close (auto-resets the next day in IST at midnight)
+ * 2. Author "OPEN NOW" / Early Opening override (force_open_date = today IST, auto-resets next day)
+ * 3. Automatic Indian Timing schedule (7:30 PM to 12:00 AM Midnight IST)
+ * 4. Automatic closed state for all remaining hours (12:00 AM to 7:30 PM IST)
  */
 export function calculateStoreStatus(status?: StoreStatus | null): {
   isOpen: boolean;
   isClosedForToday: boolean;
+  isForcedOpen: boolean;
   isAutoScheduled: boolean;
   nextOpenText: string;
   todayScheduleDisplay: string;
@@ -120,59 +121,52 @@ export function calculateStoreStatus(status?: StoreStatus | null): {
   const closeMinutes = ch * 60 + cm;
 
   const inScheduleHours = currentMinutes >= openMinutes && currentMinutes < closeMinutes;
-  const nextText = currentMinutes < openMinutes ? 'Opens Today at 7:00 PM' : 'Opens Tomorrow at 7:00 PM';
+  const nextText = currentMinutes < openMinutes ? 'Opens Today at 7:30 PM' : 'Opens Tomorrow at 7:30 PM';
 
   const istHour12 = ist.hour % 12 || 12;
   const istAmPm = ist.hour >= 12 ? 'PM' : 'AM';
   const istTimeStr = `${istHour12}:${String(ist.minute).padStart(2, '0')} ${istAmPm} IST`;
 
-  // 1. An explicit owner-open override applies for today only.
-  const openedEarlyToday = status?.force_open_date === ist.dateString && status.is_open === true;
-  if (openedEarlyToday) {
+  // 1. Author OPEN NOW / Early Opening override applies only on its stored IST date.
+  // Next day at midnight IST, this automatically expires and regular schedule takes over.
+  const isForcedOpenToday = status?.force_open_date === ist.dateString && status?.is_open === true;
+  if (isForcedOpenToday) {
     return {
       isOpen: true,
       isClosedForToday: false,
+      isForcedOpen: true,
       isAutoScheduled: false,
-      nextOpenText: 'Open Now (owner override for today)',
+      nextOpenText: inScheduleHours ? 'Open Now (7:30 PM – 12:00 AM)' : 'Open Now (Early Opening by Owner)',
       todayScheduleDisplay: todaySchedule.display,
-      statusLabel: 'Open Now',
+      statusLabel: inScheduleHours ? 'Open Now' : 'Open Now (Early Opening)',
       currentISTTimeDisplay: istTimeStr,
     };
   }
 
-  // 2. A close-for-today override applies only on its stored IST date.
+  // 2. Author Close Shop for Today / Immediate Close override applies only on its stored IST date.
+  // Next day at midnight IST, this automatically expires and regular schedule takes over.
   const isClosedToday = status?.closed_for_date === ist.dateString;
   if (isClosedToday) {
     return {
       isOpen: false,
       isClosedForToday: true,
+      isForcedOpen: false,
       isAutoScheduled: false,
-      nextOpenText: 'Opens Tomorrow at 7:00 PM',
+      nextOpenText: 'Opens Tomorrow at 7:30 PM',
       todayScheduleDisplay: todaySchedule.display,
       statusLabel: 'Closed for Today',
       currentISTTimeDisplay: istTimeStr,
     };
   }
 
-  // 3. Keep a manual close fallback compatible with older saved records.
-  if (status && status.is_open === false && !status.closed_for_date) {
-    return {
-      isOpen: false,
-      isClosedForToday: false,
-      isAutoScheduled: false,
-      nextOpenText: nextText,
-      todayScheduleDisplay: todaySchedule.display,
-      statusLabel: 'Temporarily Closed by Owner',
-      currentISTTimeDisplay: istTimeStr,
-    };
-  }
-
-  // 4. Automatic trigger per Indian Timing (7:00 PM - 11:30 PM IST)
+  // 3. Regular Real-Time Automatic Schedule (7:30 PM to 12:00 AM Midnight IST)
+  // Closed during all remaining hours (12:00 AM to 7:30 PM IST)
   return {
     isOpen: inScheduleHours,
     isClosedForToday: false,
+    isForcedOpen: false,
     isAutoScheduled: true,
-    nextOpenText: inScheduleHours ? 'Open Now (7:00 PM – 11:30 PM)' : nextText,
+    nextOpenText: inScheduleHours ? 'Open Now (7:30 PM – 12:00 AM)' : nextText,
     todayScheduleDisplay: todaySchedule.display,
     statusLabel: inScheduleHours ? 'Open Now' : 'Currently Closed',
     currentISTTimeDisplay: istTimeStr,

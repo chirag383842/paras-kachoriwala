@@ -49,7 +49,7 @@ import {
   syncFeedbackToGoogleSheet,
   testGoogleSheetWebhook,
 } from '@/lib/googleSheets';
-import { CROWD_META, type CrowdLevel, formatTime, getISTDate } from '@/lib/constants';
+import { CROWD_META, type CrowdLevel, formatTime, getISTDate, isWithinScheduleHours } from '@/lib/constants';
 import { GALLERY_CATEGORIES } from '@/lib/galleryData';
 import type { Page } from '@/components/Navbar';
 import type { GalleryImage, GalleryCategory } from '@/lib/types';
@@ -198,38 +198,68 @@ export default function Admin({ onNavigate }: Props) {
   };
 
   // 1. Store Status Actions
-  const handleSaveStatus = async (
-    forcedOpen?: boolean,
-    options?: { resumeSchedule?: boolean; openEarly?: boolean }
-  ) => {
+  const handleForceOpenNow = async () => {
+    if (
+      !confirm(
+        'Open the stall now for today? The store will be marked OPEN immediately. The regular daily schedule (7:30 PM – 12:00 AM IST) will resume tomorrow automatically.'
+      )
+    ) {
+      return;
+    }
     setStatusSaving(true);
     setStatusMessage('');
     setStatusError('');
 
-    const targetOpen = forcedOpen !== undefined ? forcedOpen : isOpen;
     const ist = getISTDate();
-    let forceOpenDate: string | null = null;
-    if (!targetOpen || options?.resumeSchedule) {
-      forceOpenDate = null;
-    } else if (options?.openEarly) {
-      forceOpenDate = ist.dateString;
-    } else if (storeStatus?.force_open_date === ist.dateString) {
-      forceOpenDate = ist.dateString;
-    }
-
     const res = await updateStoreStatus({
-      is_open: targetOpen,
+      is_open: true,
       crowd_level: crowd,
-      closed_for_date: targetOpen ? null : ist.dateString,
-      force_open_date: forceOpenDate,
+      force_open_date: ist.dateString,
+      closed_for_date: null,
+      override_mode: 'force_open',
     });
 
     if (res.success) {
-      setIsOpen(targetOpen);
-      setStatusMessage('Store status published live in real time!');
-      setTimeout(() => setStatusMessage(''), 4000);
+      setIsOpen(true);
+      setStatusMessage(
+        'Stall is now OPEN for today! Next day it will automatically follow the daily 7:30 PM – 12:00 AM schedule.'
+      );
+      setTimeout(() => setStatusMessage(''), 5000);
     } else {
-      setStatusError(res.error ?? 'Unable to publish store status. Please try again.');
+      setStatusError(res.error ?? 'Unable to publish store status.');
+    }
+    setStatusSaving(false);
+  };
+
+  const handleForceCloseNow = async () => {
+    if (
+      !confirm(
+        'Close the stall immediately for today? The store will be marked CLOSED immediately. The regular daily schedule will resume tomorrow automatically at 7:30 PM IST.'
+      )
+    ) {
+      return;
+    }
+    setStatusSaving(true);
+    setStatusMessage('');
+    setStatusError('');
+
+    const ist = getISTDate();
+    const res = await updateStoreStatus({
+      is_open: false,
+      crowd_level: crowd,
+      force_open_date: null,
+      closed_for_date: ist.dateString,
+      override_mode: 'force_close',
+    });
+
+    if (res.success) {
+      setIsOpen(false);
+      setStatusMessage(
+        'Stall is now CLOSED for today! Next day it will automatically follow the daily 7:30 PM – 12:00 AM schedule.'
+      );
+      setTimeout(() => setStatusMessage(''), 5000);
+    } else {
+      setStatusError(res.error ?? 'Unable to publish store status.');
     }
     setStatusSaving(false);
   };
@@ -237,7 +267,7 @@ export default function Admin({ onNavigate }: Props) {
   const handleCloseShopForToday = async () => {
     if (
       !confirm(
-        'Are you sure you want to close the shop for today? It will automatically reopen tomorrow according to the normal schedule (7:00 PM IST).'
+        'Are you sure you want to close the shop for today? It will automatically reopen tomorrow according to the normal schedule (7:30 PM IST).'
       )
     ) {
       return;
@@ -253,16 +283,69 @@ export default function Admin({ onNavigate }: Props) {
       crowd_level: 'Low',
       closed_for_date: ist.dateString,
       force_open_date: null,
+      override_mode: 'force_close',
     });
 
     if (res.success) {
       setIsOpen(false);
       setStatusMessage(
-        `Shop closed for today (${ist.dateString}). The system will automatically reset tomorrow at 7:00 PM IST.`
+        `Shop closed for today (${ist.dateString}). The system will automatically reset tomorrow at 7:30 PM IST.`
       );
       setTimeout(() => setStatusMessage(''), 5000);
     } else {
       setStatusError(res.error ?? 'Unable to close the shop for today. Please try again.');
+    }
+    setStatusSaving(false);
+  };
+
+  const handleResumeSchedule = async () => {
+    setStatusSaving(true);
+    setStatusMessage('');
+    setStatusError('');
+
+    const nowWithinSchedule = isWithinScheduleHours();
+    const res = await updateStoreStatus({
+      is_open: nowWithinSchedule,
+      crowd_level: crowd,
+      closed_for_date: null,
+      force_open_date: null,
+      override_mode: null,
+    });
+
+    if (res.success) {
+      setIsOpen(nowWithinSchedule);
+      setStatusMessage(
+        `Overrides cleared! Store is now following the real-time automatic schedule (7:30 PM – 12:00 AM daily). Currently ${nowWithinSchedule ? 'OPEN' : 'CLOSED'}.`
+      );
+      setTimeout(() => setStatusMessage(''), 5000);
+    } else {
+      setStatusError(res.error ?? 'Unable to update store status.');
+    }
+    setStatusSaving(false);
+  };
+
+  const handleSaveCrowdLevel = async () => {
+    setStatusSaving(true);
+    setStatusMessage('');
+    setStatusError('');
+
+    const ist = getISTDate();
+    const isTodayOpenOverride = storeStatus?.force_open_date === ist.dateString;
+    const isTodayClosedOverride = storeStatus?.closed_for_date === ist.dateString;
+
+    const res = await updateStoreStatus({
+      is_open: storeComputed.isOpen,
+      crowd_level: crowd,
+      closed_for_date: isTodayClosedOverride ? ist.dateString : null,
+      force_open_date: isTodayOpenOverride ? ist.dateString : null,
+      override_mode: storeStatus?.override_mode ?? null,
+    });
+
+    if (res.success) {
+      setStatusMessage(`Live crowd meter updated to "${crowd}"!`);
+      setTimeout(() => setStatusMessage(''), 4000);
+    } else {
+      setStatusError(res.error ?? 'Unable to update crowd level.');
     }
     setStatusSaving(false);
   };
@@ -717,15 +800,38 @@ export default function Admin({ onNavigate }: Props) {
                   </p>
                 </div>
 
-              {/* Closure Notice Banner */}
-              {isClosedForToday && (
+              {/* Status Mode Banner */}
+              {storeStatus?.force_open_date === istDate.dateString ? (
+                <div className="p-4 rounded-2xl bg-leaf-50 border border-leaf-200 text-leaf-900 flex items-start gap-3">
+                  <CheckCircle2 size={20} className="text-leaf-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-sm">Shop is Forced OPEN for Today ({istDate.dateString})</p>
+                    <p className="text-xs text-leaf-800 mt-0.5">
+                      Early / manual opening is active for today. Tomorrow at midnight IST, this override will
+                      automatically expire and the regular daily schedule (7:30 PM – 12:00 AM IST) will resume.
+                    </p>
+                  </div>
+                </div>
+              ) : isClosedForToday ? (
                 <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3">
                   <Calendar size={20} className="text-amber-600 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-bold text-sm">Shop is currently Closed for Today ({istDate.dateString})</p>
                     <p className="text-xs text-amber-800 mt-0.5">
-                      The shop will automatically follow the next day's regular schedule (7:00 PM – 11:30 PM IST). You
-                      can also click "Open Shop Now / Resume" below at any time.
+                      The shop will automatically reopen tomorrow according to the regular schedule (7:30 PM – 12:00 AM
+                      IST). You can also click &quot;Resume Normal Schedule&quot; or &quot;OPEN NOW&quot; below at any
+                      time.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 rounded-2xl bg-sky-50/80 border border-sky-200 text-sky-900 flex items-start gap-3">
+                  <Clock size={20} className="text-sky-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-sm">Automatic Schedule Active (7:30 PM – 12:00 AM IST Daily)</p>
+                    <p className="text-xs text-sky-800 mt-0.5">
+                      No manual override is active. The stall opens automatically at 7:30 PM and closes at 12:00 AM
+                      midnight. All other hours are automatically marked closed.
                     </p>
                   </div>
                 </div>
@@ -734,21 +840,12 @@ export default function Admin({ onNavigate }: Props) {
               {/* Operating Status Direct Selector */}
               <div>
                 <label className="block font-bold text-base text-charcoal-900 mb-2">
-                  Operating Status
+                  Operating Status (Today&apos;s Immediate Action)
                 </label>
                 <div className="grid grid-cols-2 gap-4">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (
-                        !confirm(
-                          'Open the shop for today only? Normal Indian schedule will apply automatically tomorrow.'
-                        )
-                      ) {
-                        return;
-                      }
-                      handleSaveStatus(true, { openEarly: true });
-                    }}
+                    onClick={handleForceOpenNow}
                     disabled={statusSaving}
                     className={`p-4 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-1.5 ${
                       storeComputed.isOpen
@@ -760,21 +857,14 @@ export default function Admin({ onNavigate }: Props) {
                       <span className="h-3 w-3 rounded-full bg-leaf-500 animate-pulse" />
                       OPEN NOW
                     </span>
-                    <span className="text-[11px] opacity-75">Stall is active & accepting orders</span>
+                    <span className="text-[11px] opacity-75">
+                      {storeComputed.isForcedOpen ? 'Opened early / forced open' : 'Stall is active & taking orders'}
+                    </span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => {
-                      if (
-                        !confirm(
-                          'Close the shop for today only? It will follow the normal Indian schedule automatically tomorrow.'
-                        )
-                      ) {
-                        return;
-                      }
-                      handleSaveStatus(false);
-                    }}
+                    onClick={handleForceCloseNow}
                     disabled={statusSaving}
                     className={`p-4 rounded-2xl border text-center transition-all flex flex-col items-center justify-center gap-1.5 ${
                       !storeComputed.isOpen
@@ -786,7 +876,9 @@ export default function Admin({ onNavigate }: Props) {
                       <span className="h-3 w-3 rounded-full bg-red-500" />
                       CLOSED NOW
                     </span>
-                    <span className="text-[11px] opacity-75">Stall is currently shut</span>
+                    <span className="text-[11px] opacity-75">
+                      {isClosedForToday ? 'Closed for today' : 'Stall is currently shut'}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -797,7 +889,7 @@ export default function Admin({ onNavigate }: Props) {
                 <div className="p-5 rounded-2xl bg-red-50/70 border border-red-200 space-y-3">
                   <p className="font-bold text-base text-red-900">Close for Today Only</p>
                   <p className="text-xs text-red-700 leading-relaxed">
-                    Immediately closes the stall for the current business day and auto-reopens tomorrow at 7:00 PM IST.
+                    Immediately closes the stall for the current day and automatically reopens tomorrow at 7:30 PM IST.
                   </p>
                   <button
                     onClick={handleCloseShopForToday}
@@ -811,17 +903,18 @@ export default function Admin({ onNavigate }: Props) {
 
                 {/* 2. Open / Regular Schedule Toggle */}
                 <div className="p-5 rounded-2xl bg-leaf-50/70 border border-leaf-200 space-y-3">
-                  <p className="font-bold text-base text-leaf-900">Resume Normal Schedule</p>
+                  <p className="font-bold text-base text-leaf-900">Resume Automatic Schedule</p>
                   <p className="text-xs text-leaf-700 leading-relaxed">
-                    Clear any closure overrides and resume regular operating schedule (7:00 PM – 11:30 PM IST).
+                    Clear any manual open/close overrides and strictly follow the real-time daily schedule (7:30 PM –
+                    12:00 AM IST).
                   </p>
                   <button
-                    onClick={() => handleSaveStatus(true, { resumeSchedule: true })}
+                    onClick={handleResumeSchedule}
                     disabled={statusSaving}
                     className="btn bg-leaf-600 hover:bg-leaf-700 text-white text-xs py-2.5 px-4 w-full flex items-center justify-center gap-2 shadow-sm font-bold"
                   >
                     <CheckCircle2 size={15} />
-                    Open Shop / Clear Override
+                    Resume Normal Schedule / Clear Overrides
                   </button>
                 </div>
               </div>
@@ -833,8 +926,8 @@ export default function Admin({ onNavigate }: Props) {
                   Live Crowd Level
                 </label>
                 <p className="text-xs text-charcoal-600 mb-4">
-                  Select the current crowd level. (Note: crowd information is automatically hidden from customers when
-                  the shop is marked closed).
+                  Select the current crowd level. (Crowd information is automatically hidden from customers when the shop
+                  is marked closed).
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {(['Low', 'Moderate', 'Busy', 'Very Busy'] as CrowdLevel[]).map((level) => {
@@ -874,12 +967,12 @@ export default function Admin({ onNavigate }: Props) {
               )}
 
               <button
-                onClick={() => handleSaveStatus()}
+                onClick={handleSaveCrowdLevel}
                 disabled={statusSaving}
                 className="btn-primary w-full sm:w-auto py-3 px-8 flex items-center justify-center gap-2 shadow-warm"
               >
                 {statusSaving ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} />}
-                {statusSaving ? 'Publishing Live Changes...' : 'Save & Publish Live Status'}
+                {statusSaving ? 'Publishing Live Changes...' : 'Save Live Crowd Level'}
               </button>
               </div>
             </div>
@@ -916,7 +1009,7 @@ export default function Admin({ onNavigate }: Props) {
 
                 <div className="flex items-center justify-between pt-2 border-t border-white/10">
                   <span className="text-xs text-spice-200">Operating Hours</span>
-                  <span className="text-xs font-semibold text-white">7:00 PM – 11:30 PM IST</span>
+                  <span className="text-xs font-semibold text-white">7:30 PM – 12:00 AM IST</span>
                 </div>
               </div>
               <p className="text-xs text-spice-100/60 leading-relaxed">

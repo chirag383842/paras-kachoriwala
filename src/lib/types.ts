@@ -19,6 +19,7 @@ export type StoreStatus = {
   updated_by?: string;
   closed_for_date?: string | null;
   force_open_date?: string | null;
+  override_mode?: 'force_open' | 'force_close' | null;
 };
 
 export type Feedback = {

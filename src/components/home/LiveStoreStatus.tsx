@@ -99,7 +99,7 @@ export default function LiveStoreStatus() {
                     </span>
                     <div>
                       <p className="text-[10px] uppercase tracking-wider text-spice-200/70 font-bold">Daily Hours</p>
-                      <p className="text-sm font-bold text-white">7:00 PM – 11:30 PM IST</p>
+                      <p className="text-sm font-bold text-white">7:30 PM – 12:00 AM IST</p>
                     </div>
                   </div>
                 </div>
@@ -131,8 +131,8 @@ export default function LiveStoreStatus() {
                 <Clock size={18} className="shrink-0 text-red-400" />
                 <span>
                   {isClosedForToday
-                    ? 'The shop is closed for today. We will reopen tomorrow at 7:00 PM IST!'
-                    : `We are currently closed. ${computed.nextOpenText} (Regular hours: 7:00 PM – 11:30 PM).`}
+                    ? 'The shop is closed for today. We will reopen tomorrow at 7:30 PM IST!'
+                    : `We are currently closed. ${computed.nextOpenText} (Regular hours: 7:30 PM – 12:00 AM).`}
                 </span>
               </div>
               <a
